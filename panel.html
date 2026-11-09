@@ -26,6 +26,7 @@
         <span class="pill">👥 <b id="nalias">0</b>&nbsp;conectados</span>
       </div>
       <div class="row">
+        <button class="btn y sm" id="brep">Reporte final</button>
         <button class="btn sec sm" id="bqr">Mostrar enlace y QR</button>
         <button class="btn sec sm" id="bstop">Pausar celulares</button>
       </div>
@@ -59,6 +60,7 @@
 <script src="config.js"></script>
 <script src="actividades.js"></script>
 <script src="comun.js"></script>
+<script src="reporte.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 (function () {
@@ -129,6 +131,15 @@
     $('qlink').textContent = linkEst.href; $('qrbox').innerHTML = '';
     try { new QRCode($('qrbox'), { text: linkEst.href, width: 260, height: 260 }); } catch (e) { $('qrbox').textContent = 'No se pudo generar el QR; comparte el enlace.'; }
     $('qr').hidden = false;
+  };
+  $('brep').onclick = function () {
+    var b = this; b.disabled = true; b.textContent = 'Generando…';
+    Promise.all([DB.leer('resp'), DB.leer('alias')]).then(function (r) {
+      var resp = r[0] || {}, al = r[1] || {};
+      REPORTE.visor(REPORTE.grupo(resp, al), 'Reporte_clase_' + A.SALA + '.html');
+      return DB.poner('resumen', REPORTE.resumen(resp)).then(function () { toast('Promedios del grupo compartidos con los celulares'); });
+    }).catch(function (e) { toast('No se pudo generar el reporte (' + (e && e.code || e) + ')'); })
+      .then(function () { b.disabled = false; b.textContent = 'Reporte final'; });
   };
   $('bqrclose').onclick = function () { $('qr').hidden = true; };
   $('bcopy').onclick = function () { copy(linkEst.href); };

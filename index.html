@@ -13,7 +13,7 @@
 <div class="stu">
   <header>
     <div><div class="eyebrow">Clase en vivo</div><div id="ctitle" class="muted" style="font-size:.85rem"></div></div>
-    <div class="who"><span id="me"></span><br><span class="pill"><span id="cdot" class="dot"></span><span id="ctxt">Conectando</span></span></div>
+    <div class="who"><span id="me"></span><br><span class="pill"><span id="cdot" class="dot"></span><span id="ctxt">Conectando</span></span><br><button class="btn sec sm" id="brep" hidden style="margin-top:6px">Mi reporte</button></div>
   </header>
 
   <section id="s-carga" class="card wait"><div class="spin"></div><p>Conectando con la clase…</p></section>
@@ -35,6 +35,7 @@
 <script src="config.js"></script>
 <script src="actividades.js"></script>
 <script src="comun.js"></script>
+<script src="reporte.js"></script>
 <script>
 (function () {
   var A = APP, DB = A.DB, esc = A.esc, $ = function (id) { return document.getElementById(id); };
@@ -68,9 +69,23 @@
     $('me').textContent = aliasName;
     DB.poner('alias/' + DB.uid, aliasName).catch(function () {});
     if (DB.presencia) DB.presencia();
+    $('brep').hidden = false;
     show('s-espera');
     DB.escuchar('estado', function (e) { estado = e; render(); }, function (e) { fail('No hay permiso para leer la clase. Revisa las reglas de Firebase. (' + (e && e.code || '') + ')'); });
   }
+
+  $('brep').onclick = function () {
+    var mine = {};
+    A.clase.actividades.forEach(function (a) {
+      if (a.items) a.items.forEach(function (it, i) { var k = A.clave(a, i), x = local(k); if (x != null) mine[k] = x; });
+      else { var x = local(A.clave(a)); if (x != null) mine[a.id] = x; }
+    });
+    var b = this; b.disabled = true;
+    DB.leer('resumen').catch(function () { return null; }).then(function (R) {
+      b.disabled = false;
+      REPORTE.visor(REPORTE.personal(aliasName, mine, R), 'Mi_reporte_' + aliasName.replace(/[^\wáéíóúñÁÉÍÓÚÑ-]+/g, '_') + '.html');
+    });
+  };
 
   function enviar(key, v) {
     return DB.poner('resp/' + key + '/' + DB.uid, { v: v, t: A.TS }).then(function () { local(key, v); });

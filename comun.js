@@ -31,6 +31,7 @@
       escuchar: function (p, cb) { var s = { p: 'salas/' + SALA + '/' + p, cb: cb, last: undefined }; subs.push(s); setTimeout(fire, 0); return function () { subs = subs.filter(function (x) { return x !== s; }); }; },
       poner: function (p, v) { var t = tree(); setp(t, 'salas/' + SALA + '/' + p, v); save(t); return Promise.resolve(); },
       borrar: function (p) { var t = tree(); setp(t, 'salas/' + SALA + '/' + p, null); save(t); return Promise.resolve(); },
+      leer: function (p) { return Promise.resolve(get(tree(), 'salas/' + SALA + '/' + p)); },
       presencia: function () {
         var self = this, p = 'online/' + uid;
         self.poner(p, true);
@@ -58,6 +59,7 @@
     api.loginProfe = function (clave) { return F.db.set(r('profes/' + api.uid), clave).then(function () { return true; }); };
     api.escuchar = function (p, cb, err) { return F.db.onValue(r('salas/' + SALA + '/' + p), function (s) { cb(s.val()); }, function (e) { if (err) err(e); else console.warn(e); }); };
     api.poner = function (p, v) { return F.db.set(r('salas/' + SALA + '/' + p), v); };
+    api.leer = function (p) { return F.db.get(r('salas/' + SALA + '/' + p)).then(function (s) { return s.val(); }); };
     api.borrar = function (p) { return F.db.remove(r('salas/' + SALA + '/' + p)); };
     /* Presencia: Firebase borra online/{uid} solo cuando se cierra la conexión (pestaña cerrada, sin internet). */
     api.presencia = function () {
