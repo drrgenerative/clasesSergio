@@ -1,0 +1,36 @@
+{
+  "rules": {
+    "clave": { ".read": false, ".write": false },
+    "profes": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid && newData.val() === root.child('clave').val()"
+      }
+    },
+    "salas": {
+      "$sala": {
+        "estado": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('profes').child(auth.uid).val() === root.child('clave').val()"
+        },
+        "alias": {
+          ".read": "auth != null && root.child('profes').child(auth.uid).val() === root.child('clave').val()",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          }
+        },
+        "resp": {
+          ".read": "auth != null && root.child('profes').child(auth.uid).val() === root.child('clave').val()",
+          ".write": "auth != null && root.child('profes').child(auth.uid).val() === root.child('clave').val()",
+          "$act": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid",
+              ".validate": "newData.hasChildren(['v', 't'])"
+            }
+          }
+        }
+      }
+    }
+  }
+}
