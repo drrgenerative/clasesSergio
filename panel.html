@@ -71,7 +71,7 @@
   $('ptitle').textContent = A.clase.titulo;
   $('psala').textContent = 'Sala: ' + A.SALA;
   var linkEst = new URL('index.html', location.href); linkEst.search = '?sala=' + encodeURIComponent(A.SALA) + (A.demo ? '&demo=1' : '');
-  $('pmodo').textContent = A.demo ? 'Modo demo (solo este navegador)' : 'En vivo con Firebase';
+  $('pmodo').textContent = A.demo ? 'Modo demo (solo este navegador)';
 
   function toast(t) { var d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 1800); }
   function copy(t) { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Copiado'); }).catch(function () { var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Copiado'); } catch (e) {} ta.remove(); }); }
