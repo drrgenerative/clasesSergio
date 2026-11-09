@@ -31,6 +31,12 @@
       escuchar: function (p, cb) { var s = { p: 'salas/' + SALA + '/' + p, cb: cb, last: undefined }; subs.push(s); setTimeout(fire, 0); return function () { subs = subs.filter(function (x) { return x !== s; }); }; },
       poner: function (p, v) { var t = tree(); setp(t, 'salas/' + SALA + '/' + p, v); save(t); return Promise.resolve(); },
       borrar: function (p) { var t = tree(); setp(t, 'salas/' + SALA + '/' + p, null); save(t); return Promise.resolve(); },
+      presencia: function () {
+        var self = this, p = 'online/' + uid;
+        self.poner(p, true);
+        window.addEventListener('pagehide', function () { self.borrar(p); });
+        window.addEventListener('pageshow', function (e) { if (e.persisted) self.poner(p, true); });
+      },
       reiniciarTodo: function () { try { localStorage.removeItem(KEY); } catch (e) {} fire(); if (bc) bc.postMessage(1); }
     };
   }
@@ -53,6 +59,16 @@
     api.escuchar = function (p, cb, err) { return F.db.onValue(r('salas/' + SALA + '/' + p), function (s) { cb(s.val()); }, function (e) { if (err) err(e); else console.warn(e); }); };
     api.poner = function (p, v) { return F.db.set(r('salas/' + SALA + '/' + p), v); };
     api.borrar = function (p) { return F.db.remove(r('salas/' + SALA + '/' + p)); };
+    /* Presencia: Firebase borra online/{uid} solo cuando se cierra la conexión (pestaña cerrada, sin internet). */
+    api.presencia = function () {
+      var me = r('salas/' + SALA + '/online/' + api.uid);
+      F.db.onValue(r('.info/connected'), function (s) {
+        if (!s.val()) return;
+        F.db.onDisconnect(me).remove().then(function () { return F.db.set(me, true); }).catch(function (e) { console.warn(e); });
+      });
+      window.addEventListener('pagehide', function () { F.db.remove(me).catch(function () {}); });
+      window.addEventListener('pageshow', function (e) { if (e.persisted) F.db.set(me, true).catch(function () {}); });
+    };
     api.conexion = function (cb) { return F.db.onValue(r('.info/connected'), function (s) { cb(!!s.val()); }); };
     return api;
   }

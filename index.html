@@ -67,6 +67,7 @@
   function entrar() {
     $('me').textContent = aliasName;
     DB.poner('alias/' + DB.uid, aliasName).catch(function () {});
+    if (DB.presencia) DB.presencia();
     show('s-espera');
     DB.escuchar('estado', function (e) { estado = e; render(); }, function (e) { fail('No hay permiso para leer la clase. Revisa las reglas de Firebase. (' + (e && e.code || '') + ')'); });
   }
