@@ -1,6 +1,9 @@
 {
   "rules": {
-    "clave": { ".read": false, ".write": false },
+    "clave": {
+      ".read": false,
+      ".write": false
+    },
     "profes": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
@@ -29,6 +32,18 @@
               ".validate": "newData.hasChildren(['v', 't'])"
             }
           }
+        },
+        "online": {
+          ".read": "auth != null && root.child('profes').child(auth.uid).val() === root.child('clave').val()",
+          ".write": "auth != null && root.child('profes').child(auth.uid).val() === root.child('clave').val()",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.isBoolean()"
+          }
+        },
+        "resumen": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('profes').child(auth.uid).val() === root.child('clave').val()"
         }
       }
     }

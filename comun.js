@@ -1,7 +1,8 @@
 /* Capa de datos: Firebase Realtime Database (modo en vivo) o el navegador (modo demo). */
 (function () {
   var params = new URLSearchParams(location.search);
-  var SALA = (params.get('sala') || window.SALA || 'clase').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'clase';
+  /* La sala es la clase + el grupo (si hay). Ej.: m4s1, o m3s3-grupoB para repetir la clase con otro grupo. */
+  var SALA = (params.get('sala') || ((window.CLASE_ID || 'clase') + (window.GRUPO ? '-' + window.GRUPO : ''))).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60) || 'clase';
   var cfg = window.FIREBASE_CONFIG || {};
   var configurado = !!(cfg.apiKey && cfg.databaseURL && String(cfg.apiKey).indexOf('PEGA_AQUI') < 0 && String(cfg.databaseURL).indexOf('PEGA_AQUI') < 0);
   var demo = params.get('demo') === '1';
@@ -76,7 +77,7 @@
   }
 
   window.APP = {
-    SALA: SALA, TS: TS, esc: esc, store: store, demo: demo, configurado: configurado,
+    SALA: SALA, CLASE_ID: window.CLASE_ID, GRUPO: window.GRUPO || '', TS: TS, esc: esc, store: store, demo: demo, configurado: configurado,
     DB: demo ? Demo() : (configurado ? Live() : null),
     clase: window.CLASE,
     act: function (id) { return (window.CLASE.actividades.filter(function (a) { return a.id === id; })[0]) || null; },

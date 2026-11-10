@@ -83,7 +83,7 @@ button{cursor:pointer}
 label.f{display:block;font-weight:700;margin:14px 0 6px}
 
 /* ---------- Panel ---------- */
-.pan{display:grid;grid-template-columns:270px 1fr;min-height:100vh}
+.pan{display:grid;grid-template-columns:270px 1fr;min-height:100vh;background:linear-gradient(to right,var(--ink) 270px,transparent 270px)}
 .pan aside{background:var(--ink);color:#fff;padding:18px 14px;position:sticky;top:0;height:100vh;overflow:auto}
 .pan aside h1{font-size:1rem;margin:0 0 4px;line-height:1.25}
 .pan aside .sala{font-size:.8rem;color:#bbb;margin-bottom:14px}
@@ -132,7 +132,7 @@ table.t th{font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:
 .link{word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:.88rem;background:var(--bg);padding:8px 10px;border-radius:8px}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;z-index:60}
 @media (max-width:860px){
-  .pan{grid-template-columns:1fr}
+  .pan{grid-template-columns:1fr;background:none}
   .pan aside{position:static;height:auto}
   .pan main{padding:16px}
   .stage{padding:18px}
