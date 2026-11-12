@@ -89,6 +89,15 @@
       return out;
     },
     nivel: function (x) { return x < 2 ? 'Inicial' : x < 3 ? 'En desarrollo' : x < 4 ? 'Avanzado' : 'Líder'; },
+    /* Misión de pasos: 10 puntos por paso bien clasificado + 30 por el cuello de botella */
+    puntosPasos: function (v) {
+      var pr = (window.CLASE.procesos || [])[v && v.p]; if (!pr) return { pts: 0, ok: 0, max: 0, cuello: false };
+      var ok = 0; pr.pasos.forEach(function (st, i) { if ((v.r || [])[i] === st.a) ok++; });
+      var c = v.c === pr.cuello;
+      return { pts: ok * 10 + (c ? 30 : 0), ok: ok, total: pr.pasos.length, max: pr.pasos.length * 10 + 30, cuello: c };
+    },
+    /* Mi primer bot: horas liberadas al mes */
+    horasMes: function (v) { if (!v) return 0; var d = Math.max(0, (+v.a || 0) - (+v.b || 0)); return d * (+v.f || 0) * 52 / 12 / 60; },
     bloqueo: function (v) { for (var i = 0; i < 5; i++) { if ((+v[i] || 0) <= 3) return i; } return -1; }
   };
 })();

@@ -14,4 +14,4 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "224928228281",
   appId: "1:224928228281:web:0721aa886a227128638c68"
 };
-window.CLASE_DEFECTO = "m4s1";
+window.CLASE_DEFECTO = "m4s2";

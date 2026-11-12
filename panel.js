@@ -45,15 +45,16 @@
   };
 
   function arrancar() {
-    DB.escuchar('estado', function (e) { estado = e || {}; nav(); if (estado.act === cur && (A.act(cur).tipo === 'quiz' || A.act(cur).tipo === 'encuesta')) { if ((estado.q || 0) !== viewQ) { viewQ = estado.q || 0; suscribir(); } } stage(); });
+    DB.escuchar('estado', function (e) { estado = e || {}; nav(); if (estado.act === cur && A.act(cur) && (A.act(cur).tipo === 'quiz' || A.act(cur).tipo === 'encuesta')) { if ((estado.q || 0) !== viewQ) { viewQ = estado.q || 0; suscribir(); } } stage(); });
     DB.escuchar('alias', function (v) { aliases = v || {}; stage(); });
     DB.escuchar('online', function (v) { online = v || {}; $('nalias').textContent = Object.keys(online).length; stage(); });
-    var h = (location.hash || '').slice(1); if (A.act(h)) cur = h;
+    var h = (location.hash || '').slice(1); if (A.act(h) || (h === '__ranking' && A.clase.juego)) cur = h;
     nav(); suscribir();
   }
 
   function suscribir() {
     if (unsub) unsub();
+    if (cur === '__ranking') { resp = {}; unsub = DB.escuchar('resp', function (v) { resp = v || {}; stage(); }); return; }
     var a = A.act(cur), key = A.clave(a, viewQ);
     resp = {}; stage();
     unsub = DB.escuchar('resp/' + key, function (v) { resp = v || {}; stage(); });
@@ -62,7 +63,7 @@
   function nav() {
     $('nav').innerHTML = acts.map(function (a) {
       return '<li><button data-id="' + a.id + '" class="' + (a.id === cur ? 'cur' : '') + '"><span class="n">D' + a.diap + '</span><span>' + esc(a.titulo) + '</span>' + (estado.act === a.id ? '<span class="live">EN VIVO</span>' : '<span></span>') + '</button></li>';
-    }).join('');
+    }).join('') + (A.clase.juego ? '<li><button data-id="__ranking" class="' + (cur === '__ranking' ? 'cur' : '') + '"><span class="n">🏆</span><span><b>Ranking y medallas</b></span>' + (estado.act === '__ranking' ? '<span class="live">EN VIVO</span>' : '<span></span>') + '</button></li>' : '');
     $('nav').querySelectorAll('button').forEach(function (b) { b.onclick = function () { ver(b.dataset.id); }; });
   }
   function ver(id) { cur = id; var a = A.act(id); viewQ = (estado.act === id) ? (estado.q || 0) : 0; history.replaceState(null, '', '#' + id); nav(); suscribir(); }
@@ -74,7 +75,12 @@
     var n = Math.max(0, Math.min(a.items.length - 1, viewQ + d)); if (n === viewQ) return;
     viewQ = n; if (estado.act === cur) setEstado({ act: cur, q: n, revelar: false }); suscribir();
   }
-  function revelar() { var a = A.act(cur); if (!a.items) return; if (estado.act !== cur) { setEstado({ act: cur, q: viewQ, revelar: true }); return; } DB.poner('estado/revelar', !estado.revelar); }
+  function revelar() {
+    var a = A.act(cur); if (!a || !(a.items || a.tipo === 'pasos')) return;
+    var on = estado.act !== cur ? true : !estado.revelar;
+    if (estado.act !== cur) setEstado({ act: cur, q: viewQ, revelar: true }); else DB.poner('estado/revelar', on);
+    if (on && A.clase.juego && a.tipo !== 'encuesta') setTimeout(publicarRanking, 600);
+  }
 
   $('bstop').onclick = function () { setEstado({ act: null }); };
   $('bqr').onclick = function () {
@@ -85,9 +91,10 @@
   $('brep').onclick = function () {
     var b = this; b.disabled = true; b.textContent = 'Generando…';
     Promise.all([DB.leer('resp'), DB.leer('alias')]).then(function (r) {
-      var resp = r[0] || {}, al = r[1] || {};
+      var resp = r[0] || {}, al = r[1] || {}, R = REPORTE.resumen(resp);
+      if (A.clase.juego) { var K = calcRank(resp, al); R.rank = K.pub; R.equipos = K.equipos; R.horas = K.horasTot; }
       REPORTE.visor(REPORTE.grupo(resp, al), 'Reporte_clase_' + A.SALA + '.html');
-      return DB.poner('resumen', REPORTE.resumen(resp)).then(function () { toast('Promedios del grupo compartidos con los celulares'); });
+      return DB.poner('resumen', R).then(function () { toast('Promedios del grupo compartidos con los celulares'); });
     }).catch(function (e) { toast('No se pudo generar el reporte (' + (e && e.code || e) + ')'); })
       .then(function () { b.disabled = false; b.textContent = 'Reporte final'; });
   };
@@ -114,6 +121,9 @@
     if (a.tipo === 'adkar') return a.intro + '\nResponde con 5 números del 1 al 5: Conciencia, Deseo, Conocimiento, Habilidad, Refuerzo.\nEj.: 4 2 3 3 1';
     if (a.tipo === 'reparto') return a.intro + '\n' + a.opciones.map(function (o, i) { return (i + 1) + '. ' + o; }).join('\n') + '\nResponde con los puntos de cada uno, en orden. Ej.: 30 0 20 50 0 0';
     if (a.tipo === 'consultoria') { var T = A.clase.tecnologias || []; return 'Una persona por sala: envíen el análisis.\nPara cada uno de los 5 retos, la tecnología (' + T.join(', ') + ').\nLuego: el piloto elegido, el principal riesgo ético y cómo medirían el éxito.'; }
+    if (a.tipo === 'equipo') return a.intro + '\n' + (A.clase.equipos || []).map(function (e, i) { return (i + 1) + '. ' + e; }).join('\n');
+    if (a.tipo === 'pasos') return 'MISIÓN: Caza del cuello de botella. Para cada paso del proceso, decidan: 🤖 Robot, 🙋 Persona o 🗑️ Eliminar. Luego marquen el cuello de botella. Una persona por equipo envía la misión.';
+    if (a.tipo === 'mibot') return a.intro + '\nEscribe: la tarea, sus pasos (marca los que haría un robot), cuántas veces por semana la haces y cuántos minutos toma hoy y con el robot.';
     if (a.tipo === 'comite') return 'CEO de cada comité: envíen su decisión.\n1) Etapa ADKAR del bloqueo\n2) 100 puntos en: ' + a.dimensiones.join(', ') + '\n3) 2 estrategias\n4) Acción de 90 días';
     return '';
   }
@@ -133,24 +143,29 @@
       else if (a.tipo === 'adkar') v = { c: ['Nuevo CRM', 'Firma digital', 'Trabajo híbrido', 'App para asesores'][i % 4], s: [lean(5, 3.8), lean(5, 2.6), lean(5, 3), lean(5, 2.8), lean(5, 2)] };
       else if (a.tipo === 'reparto') { v = a.opciones.map(function () { return 0; }); var left = 100; while (left > 0) { var k = r(a.opciones.length), d = Math.min(left, 10 * (1 + r(3))); v[k] += d; left -= d; } }
       else if (a.tipo === 'consultoria') { if (i > 5) return; var em = (A.clase.empresas || [])[i]; if (!em) return; v = { n: 'Sala ' + (i + 1), emp: i, r: em.retos.map(function (x) { return Math.random() < .7 ? x.a : r(5); }), p: r(5), k: ['Datos sensibles: pedir autorización y revisión humana.', 'Puede discriminar: definir reglas y auditar.', 'Privacidad de los conductores: informarles qué se mide.', 'Decisiones sobre estudiantes con revisión docente.', 'Datos poco confiables: digitalizar primero.', 'Ningún corte sin revisión humana.'][i], m: ['Reducir inasistencias 20 %', 'Fichas en 1 día y no en 2 semanas', 'Entregas a tiempo del 85 % al 95 %', 'Bajar la deserción 10 %', 'Detectar plagas 1 semana antes', 'Responder PQRS en 2 días y no en 15'][i] }; }
+      else if (a.tipo === 'equipo') v = i % 4;
+      else if (a.tipo === 'pasos') { if (i > 3) return; var pr = A.clase.procesos[i % 3]; v = { e: i, p: i % 3, r: pr.pasos.map(function (x) { return Math.random() < .75 ? x.a : r(3); }), c: Math.random() < .6 ? pr.cuello : r(pr.pasos.length) }; }
+      else if (a.tipo === 'mibot') { var fa = 1 + r(5), ma = 20 + 10 * r(8); v = { t: ['Reporte semanal de ventas', 'Conciliación de pagos', 'Actualizar la base de clientes', 'Enviar recordatorios de cobro'][i % 4], s: [{ x: 'Descargar el archivo del sistema', r: true }, { x: 'Pegar los datos en Excel', r: true }, { x: 'Revisar inconsistencias', r: false }, { x: 'Enviar el correo al jefe', r: true }], f: fa, a: ma, b: Math.round(ma / 4) }; }
       else if (a.tipo === 'comite') { if (i > 3) return; v = { n: 'Sala ' + (i + 1), e: [1, 0, 1, 3][i], p: [[20, 25, 15, 25, 15], [30, 20, 20, 15, 15], [10, 20, 30, 20, 20], [15, 15, 20, 25, 25]][i], s: [[0, 4], [1, 0], [3, 2], [1, 3]][i], x: ['Talleres con oficinas para co-diseñar el nuevo proceso.', 'El CEO usa la plataforma en vivo en el comité mensual.', 'Migrar el proceso de créditos a la nube con un piloto.', 'Formar 20 agentes de cambio en 60 días.'][i] }; }
       DB.poner('alias/' + u, nm); DB.poner('online/' + u, true); DB.poner('resp/' + key + '/' + u, { v: v, t: Date.now() + i * 400 });
     });
   }
 
   function stage() {
+    if (cur === '__ranking') return stageRanking();
     var a = A.act(cur); if (!a) return;
     var rs = vals(), live = estado.act === cur, nA = Object.keys(online).length;
     var html = '<div class="eyebrow">Diapositiva ' + a.diap + ' · ' + esc(a.titulo) + '</div>';
     var isQ = a.tipo === 'quiz' || a.tipo === 'encuesta';
     html += '<div class="tools">' +
       (live ? '<button class="btn sec sm" id="bdeact">✓ Activa en los celulares · pausar</button>' : '<button class="btn y" id="bact">Activar en los celulares</button>') +
-      (isQ ? '<button class="btn sec sm" id="bprev">←</button><button class="btn sec sm" id="bnext">→</button><button class="btn sm" id="brev">' + (live && estado.revelar ? 'Ocultar respuesta' : 'Revelar') + '</button>' : '') +
+      (isQ ? '<button class="btn sec sm" id="bprev">←</button><button class="btn sec sm" id="bnext">→</button>' : '') +
+      (isQ || a.tipo === 'pasos' ? '<button class="btn sm" id="brev">' + (live && estado.revelar ? 'Ocultar respuesta' : (a.tipo === 'pasos' ? 'Revelar puntajes' : 'Revelar')) + '</button>' : '') +
       '<button class="btn sec sm" id="bchat">Copiar para el chat</button>' +
       (A.demo ? '<button class="btn sec sm" id="bsim">Simular respuestas</button>' : '') +
       '<button class="btn warn sm" id="bclr">Borrar respuestas</button></div>';
     html += '<p class="count"><b>' + rs.length + '</b> respuesta' + (rs.length === 1 ? '' : 's') + (nA ? ' de ' + nA + ' conectados' : '') + '</p>';
-    html += ({ texto: vTexto, quiz: vQuiz, encuesta: vQuiz, escala: vEscala, puntos: vPuntos, multi: vMulti, adkar: vAdkar, comite: vComite, reparto: vReparto, consultoria: vConsultoria }[a.tipo])(a, rs, live);
+    html += ({ texto: vTexto, quiz: vQuiz, encuesta: vQuiz, escala: vEscala, puntos: vPuntos, multi: vMulti, adkar: vAdkar, comite: vComite, reparto: vReparto, consultoria: vConsultoria, equipo: vEquipo, pasos: vPasos, mibot: vMibot }[a.tipo])(a, rs, live);
     $('stage').innerHTML = html;
     var on = function (id, f) { var el = $(id); if (el) el.onclick = f; };
     on('bact', activar); on('bdeact', function () { setEstado({ act: null }); });
@@ -281,5 +296,96 @@
     });
     h += '</tbody></table><div class="callout">Coincidencia con la tecnología sugerida: <b>' + pct(ok, tot) + ' %</b>. Las diferencias son la mejor discusión: ¿cuándo un reto de RPA necesita IA, o un agente es demasiado?</div>';
     return h;
+  }
+  /* ===================== BotFactory: equipos, misión, mi bot y ranking ===================== */
+  var EQ = A.clase.equipos || [];
+  function vEquipo(a, rs) {
+    var h = '<h2>Equipos</h2><table class="t"><thead><tr><th>Equipo</th><th>Integrantes</th></tr></thead><tbody>';
+    EQ.forEach(function (e, i) { var m = rs.filter(function (r) { return r.v === i; }); h += '<tr><td><b>' + esc(e) + '</b> (' + m.length + ')</td><td>' + m.map(function (r) { return esc(nombre(r.u)); }).join(', ') + '</td></tr>'; });
+    return h + '</tbody></table>';
+  }
+  function vPasos(a, rs, live) {
+    var PR = A.clase.procesos || [], rev = live && estado.revelar, OPS = ['🤖 Robot', '🙋 Persona', '🗑️ Eliminar'];
+    var h = '<h2>Misiones enviadas</h2>';
+    if (!rs.length) return h + '<p class="muted">Aún no hay misiones. Una persona por equipo la envía.</p>';
+    var rows = rs.map(function (r) { return { r: r, s: A.puntosPasos(r.v) }; }).sort(function (x, y) { return rev ? y.s.pts - x.s.pts : (x.r.v.e - y.r.v.e); });
+    h += '<table class="t"><thead><tr><th>Equipo</th><th>Proceso</th><th>Pasos bien clasificados</th><th>Cuello de botella</th><th>Puntos</th></tr></thead><tbody>' + rows.map(function (x, i) {
+      return '<tr><td><b>' + (rev ? (['🥇 ', '🥈 ', '🥉 '][i] || '') : '') + esc(EQ[x.r.v.e] || '') + '</b><br><small class="muted">' + esc(nombre(x.r.u)) + '</small></td><td>' + esc((PR[x.r.v.p] || {}).n || '') + '</td><td>' + (rev ? x.s.ok + ' / ' + x.s.total : '🔒') + '</td><td>' + (rev ? (x.s.cuello ? '✓' : '✗') : '🔒') + '</td><td><b>' + (rev ? x.s.pts : '🔒') + '</b></td></tr>';
+    }).join('') + '</tbody></table>';
+    if (rev) h += PR.map(function (pr) { return '<h3 style="margin-top:18px">Clave: ' + esc(pr.n) + '</h3><ol>' + pr.pasos.map(function (st, i) { return '<li>' + esc(st.t) + ' → <b>' + OPS[st.a] + '</b>' + (i === pr.cuello ? ' · <b>⏳ cuello de botella</b>' : '') + '</li>'; }).join('') + '</ol>'; }).join('');
+    else h += '<p class="muted">Los puntajes están ocultos. Pulsa "Revelar puntajes" cuando todos los equipos hayan enviado.</p>';
+    return h;
+  }
+  function vMibot(a, rs) {
+    var tot = rs.reduce(function (s, r) { return s + A.horasMes(r.v); }, 0);
+    var h = '<div class="center" style="padding:10px 0 6px"><div class="muted" style="font-size:1.1rem">Entre todos liberamos</div><div style="font-size:4.2rem;font-weight:800;line-height:1.05;color:var(--blue)">' + tot.toFixed(0) + ' horas</div><div style="font-size:1.2rem;font-weight:700">al mes · ≈ ' + Math.round(tot * 12) + ' al año · ' + Math.round(tot / 8) + ' jornadas de 8 horas cada mes</div></div>';
+    if (!rs.length) return h + '<p class="muted center">Aún no hay bots.</p>';
+    var rows = rs.map(function (r) { return { r: r, h: A.horasMes(r.v) }; }).sort(function (x, y) { return y.h - x.h; });
+    h += '<table class="t"><thead><tr><th>Tarea</th><th>Pasos para el robot</th><th>Horas al mes</th></tr></thead><tbody>' + rows.map(function (x) { var s = x.r.v.s || []; return '<tr><td>' + esc(x.r.v.t) + '</td><td>' + s.filter(function (st) { return st.r; }).length + ' de ' + s.length + '</td><td><b>' + x.h.toFixed(1).replace('.', ',') + '</b></td></tr>'; }).join('') + '</tbody></table><p class="muted" style="font-size:.85rem">Sin nombres en esta vista. El mayor ahorro se premia en el ranking.</p>';
+    return h;
+  }
+
+  /* Puntos: 100 por acierto + bonificación por rapidez (50, 40, 30, 20, 10 para los 5 primeros en acertar) */
+  function calcRank(R, al) {
+    R = R || {}; al = al || {};
+    var pts = {}, speed = {}, BON = [50, 40, 30, 20, 10];
+    acts.filter(function (a) { return a.tipo === 'quiz'; }).forEach(function (a) {
+      a.items.forEach(function (it, i) {
+        var o = R[a.id + '_' + i] || {};
+        Object.keys(o).filter(function (u) { return o[u] && o[u].v === it.a; }).sort(function (x, y) { return (o[x].t || 0) - (o[y].t || 0); }).forEach(function (u, k) {
+          var b = BON[k] || 0; pts[u] = (pts[u] || 0) + 100 + b; speed[u] = (speed[u] || 0) + b;
+        });
+      });
+    });
+    var eqOf = {}, eo = R.equipo || {}; Object.keys(eo).forEach(function (u) { if (eo[u] && eo[u].v != null) eqOf[u] = eo[u].v; });
+    var mision = EQ.map(function () { return 0; }), mo = R.cuello || {};
+    Object.keys(mo).forEach(function (u) { var v = mo[u] && mo[u].v; if (v && v.e >= 0 && v.e < EQ.length) mision[v.e] = Math.max(mision[v.e], A.puntosPasos(v).pts); });
+    var bonus = EQ.map(function (e, i) { var b = (R._bonus || {})[i]; return b ? +b.v || 0 : 0; });
+    var equipos = EQ.map(function (n, i) {
+      var mem = Object.keys(eqOf).filter(function (u) { return eqOf[u] === i; });
+      var prom = mem.length ? Math.round(mem.reduce(function (s, u) { return s + (pts[u] || 0); }, 0) / mem.length) : 0;
+      return { n: n, miembros: mem.length, quiz: prom, mision: mision[i], bonus: bonus[i], total: prom + mision[i] + bonus[i] };
+    }).filter(function (e) { return e.miembros || e.mision || e.bonus; });
+    var gente = Object.keys(al).map(function (u) { return { u: u, n: al[u], p: pts[u] || 0 }; }).sort(function (x, y) { return y.p - x.p; });
+    var pos = {}, last = null, lastPos = 0; gente.forEach(function (g, i) { if (g.p !== last) { lastPos = i + 1; last = g.p; } pos[g.u] = lastPos; });
+    var horas = {}, ho = R.mibot || {}; Object.keys(ho).forEach(function (u) { horas[u] = A.horasMes(ho[u] && ho[u].v); });
+    var horasTot = Object.keys(horas).reduce(function (s, u) { return s + horas[u]; }, 0);
+    function best(map) { var u = Object.keys(map).sort(function (x, y) { return map[y] - map[x]; })[0]; return u && map[u] > 0 ? { n: al[u] || 'Anónimo', v: map[u] } : null; }
+    var eqBest = equipos.slice().sort(function (x, y) { return y.total - x.total; })[0], misBest = equipos.slice().sort(function (x, y) { return y.mision - x.mision; })[0];
+    var med = {
+      top: gente[0] && gente[0].p ? { n: gente[0].n, v: gente[0].p } : null,
+      rapido: best(speed), ahorro: best(horas),
+      cazadores: misBest && misBest.mision ? { n: misBest.n, v: misBest.mision } : null,
+      equipo: eqBest && eqBest.total ? { n: eqBest.n, v: eqBest.total } : null
+    };
+    var pp = {}; gente.forEach(function (g) { pp[g.u] = g.p; });
+    return { gente: gente, equipos: equipos, med: med, horasTot: horasTot, pub: { pts: pp, pos: pos, top: gente.slice(0, 10).map(function (g) { return { n: g.n, p: g.p }; }), equipos: equipos.map(function (e) { return { n: e.n, total: e.total }; }), t: Date.now() } };
+  }
+  function publicarRanking() {
+    return Promise.all([DB.leer('resp'), DB.leer('alias')]).then(function (r) { return DB.poner('resumen/rank', calcRank(r[0], r[1]).pub); }).catch(function (e) { console.warn(e); });
+  }
+  function stageRanking() {
+    var K = calcRank(resp, aliases), live = estado.act === '__ranking';
+    var h = '<div class="eyebrow">BotFactory · Ranking</div><div class="tools">' +
+      (live ? '<button class="btn sec sm" id="rdeact">✓ En los celulares · pausar</button>' : '<button class="btn y" id="ract">Mostrar el ranking en los celulares</button>') +
+      '<button class="btn sec sm" id="rpub">Actualizar puntajes en los celulares</button></div>';
+    var MED = [['top', '🏆', 'Consultor estrella', ' pts'], ['rapido', '⚡', 'Bot más rápido', ' pts de rapidez'], ['cazadores', '🔍', 'Cazadores de cuellos de botella', ' pts'], ['ahorro', '⏱️', 'Mayor ahorro', ' h/mes'], ['equipo', '🤝', 'Mejor equipo', ' pts']];
+    h += '<div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin-top:10px">' + MED.map(function (m) { var x = K.med[m[0]]; return '<div class="card" style="padding:14px;text-align:center"><div style="font-size:2rem">' + m[1] + '</div><div class="muted" style="font-weight:700">' + m[2] + '</div><div style="font-size:1.25rem;font-weight:800;margin-top:4px">' + (x ? esc(x.n) : '—') + '</div><div class="muted">' + (x ? (m[0] === 'ahorro' ? x.v.toFixed(1).replace('.', ',') : x.v) + m[3] : '') + '</div></div>'; }).join('') + '</div>';
+    h += '<div class="grid2" style="margin-top:18px"><div><h2 style="font-size:1.4rem">Consultores</h2><div class="optbars">';
+    var mx = K.gente.length ? K.gente[0].p || 1 : 1;
+    K.gente.slice(0, 12).forEach(function (g, i) { h += '<div class="ob' + (i < 3 ? ' ok' : '') + '"><span class="lbl">' + (['🥇', '🥈', '🥉'][i] || (i + 1) + '.') + ' ' + esc(g.n) + '</span><span class="trk"><i style="width:' + (100 * g.p / mx) + '%;background:' + (i < 3 ? 'var(--y)' : '#c9c9c0') + '"></i></span><span class="val">' + g.p + '</span></div>'; });
+    h += '</div></div><div><h2 style="font-size:1.4rem">Equipos</h2>';
+    if (!K.equipos.length) h += '<p class="muted">Todavía no hay equipos: activa "Nivel 0 · Elige tu equipo".</p>';
+    else h += '<table class="t"><thead><tr><th>Equipo</th><th>Juegos (promedio)</th><th>Misión</th><th>Bono</th><th>Total</th></tr></thead><tbody>' + K.equipos.slice().sort(function (x, y) { return y.total - x.total; }).map(function (e) {
+      var i = EQ.indexOf(e.n);
+      return '<tr><td><b>' + esc(e.n) + '</b> <small class="muted">(' + e.miembros + ')</small></td><td>' + e.quiz + '</td><td>' + e.mision + '</td><td style="white-space:nowrap">' + e.bonus + ' <button class="btn sec sm bb" data-i="' + i + '" data-d="25" style="min-height:28px;padding:0 .5em">+25</button> <button class="btn sec sm bb" data-i="' + i + '" data-d="-25" style="min-height:28px;padding:0 .5em">−25</button></td><td><b>' + e.total + '</b></td></tr>';
+    }).join('') + '</tbody></table>';
+    h += '<p class="muted" style="font-size:.85rem;margin-top:10px">Puntos: 100 por acierto en los juegos + bonificación por rapidez (50, 40, 30, 20 y 10 para los 5 primeros en acertar). Equipo = promedio de sus integrantes + misión + bonos.</p><div class="callout">Horas liberadas por el grupo: <b>' + K.horasTot.toFixed(0) + ' h/mes</b></div></div></div>';
+    $('stage').innerHTML = h;
+    var on = function (id, f) { var el = $(id); if (el) el.onclick = f; };
+    on('ract', function () { publicarRanking().then(function () { setEstado({ act: '__ranking' }); }); });
+    on('rdeact', function () { setEstado({ act: null }); });
+    on('rpub', function () { publicarRanking().then(function () { toast('Puntajes actualizados en los celulares'); }); });
+    $('stage').querySelectorAll('.bb').forEach(function (b) { b.onclick = function () { var i = +b.dataset.i, cur0 = ((resp._bonus || {})[i] || {}).v || 0; DB.poner('resp/_bonus/' + i, { v: cur0 + (+b.dataset.d), t: A.TS }).then(publicarRanking); }; });
   }
 })();

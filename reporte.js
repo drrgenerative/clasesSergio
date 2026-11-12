@@ -120,6 +120,14 @@
       } else if (a.tipo === 'reparto' && R[a.id]) {
         var Q = R[a.id].prom, ix = a.opciones.map(function (o, i) { return i; }).sort(function (x, y) { return Q[y] - Q[x]; });
         body = '<p class="mu">Promedio de puntos por persona · ' + R[a.id].n + ' respuestas</p>' + ix.map(function (i, k) { return bar(a.opciones[i], Q[i], 100, k === 0 ? 'k' : '', num(Q[i], 0)); }).join('');
+      } else if (a.tipo === 'pasos' && v.length) {
+        var EQ = C.equipos || [], PR = C.procesos || [], OPS = ['Robot', 'Persona', 'Eliminar'];
+        body = '<table><thead><tr><th>Equipo</th><th>Proceso</th><th>Pasos bien clasificados</th><th>Cuello de botella</th><th>Puntos</th></tr></thead><tbody>' + v.map(function (x) { var sc = A.puntosPasos(x); return { x: x, sc: sc }; }).sort(function (p, q) { return q.sc.pts - p.sc.pts; }).map(function (o) { return '<tr><td><b>' + esc(EQ[o.x.e] || '') + '</b></td><td>' + esc((PR[o.x.p] || {}).n || '') + '</td><td>' + o.sc.ok + ' / ' + o.sc.total + '</td><td>' + (o.sc.cuello ? '<span class="ok">✓</span>' : '<span class="no">✗</span>') + '</td><td><b>' + o.sc.pts + '</b></td></tr>'; }).join('') + '</tbody></table>' +
+          PR.map(function (pr) { return '<h3>Clave: ' + esc(pr.n) + '</h3><table><tbody>' + pr.pasos.map(function (st, i) { return '<tr><td>' + (i + 1) + '. ' + esc(st.t) + (i === pr.cuello ? ' <b>(cuello de botella)</b>' : '') + '</td><td style="width:90px"><b>' + OPS[st.a] + '</b></td><td>' + esc(st.exp) + '</td></tr>'; }).join('') + '</tbody></table>'; }).join('');
+      } else if (a.tipo === 'mibot' && v.length) {
+        var tot = v.reduce(function (s0, x) { return s0 + A.horasMes(x); }, 0);
+        body = '<div class="kpi"><div><b>' + num(tot, 0) + ' h/mes</b>liberadas entre todos</div><div><b>' + Math.round(tot * 12) + ' h</b>al año</div><div><b>' + v.length + '</b>tareas analizadas</div></div><p class="mu">Sin nombres.</p><table><thead><tr><th>Tarea</th><th>Pasos para el robot</th><th>Horas al mes</th></tr></thead><tbody>' +
+          v.slice().sort(function (p, q) { return A.horasMes(q) - A.horasMes(p); }).map(function (x) { var st = x.s || []; return '<tr><td>' + esc(x.t) + '</td><td>' + st.filter(function (y) { return y.r; }).length + ' de ' + st.length + '</td><td>' + num(A.horasMes(x)) + '</td></tr>'; }).join('') + '</tbody></table>';
       } else if (a.tipo === 'consultoria' && v.length) {
         body = consultoriaTabla(v);
       }
@@ -147,6 +155,7 @@
   function personal(nombre, mine, R) {
     R = R || {};
     var h = cab('Mi reporte: ' + nombre), any = false, comp = Object.keys(R).length > 1;
+    if (R.rank && R.rank.pts && window.APP.DB && R.rank.pts[window.APP.DB.uid] != null) h += '<div class="kpi"><div><b>' + R.rank.pts[window.APP.DB.uid] + ' pts</b>puntaje final en los juegos</div><div><b>#' + R.rank.pos[window.APP.DB.uid] + '</b>puesto en el ranking</div></div>';
     h += '<div class="box b2">Este reporte se generó en tu celular con tus respuestas. Nadie más lo recibe. ' + (comp ? 'Las comparaciones con el grupo son promedios anónimos de toda la clase.' : 'El profesor aún no ha compartido los promedios del grupo.') + '</div>';
     C.actividades.forEach(function (a) {
       var v = mine[a.id], body = '', G = R[a.id];
@@ -175,6 +184,9 @@
       } else if (a.tipo === 'reparto' && v) {
         body = (G ? '<p class="lg"><i style="background:#9a9a92"></i>Promedio del grupo<i style="background:#1565B0"></i>Mis puntos</p>' + a.opciones.map(function (o, i) { return dbl(o, G.prom[i], v[i], 100, v[i]); }).join('') : a.opciones.map(function (o, i) { return bar(o, v[i], 100, '', v[i]); }).join(''));
       } else if (a.tipo === 'consultoria' && v) body = consultoriaTabla([v]);
+      else if (a.tipo === 'equipo' && v != null) body = '<p>Tu equipo: <b>' + esc((C.equipos || [])[v] || '') + '</b>' + (R.rank && R.rank.equipos ? '. Puntaje final del equipo: <b>' + ((R.rank.equipos.filter(function (e) { return e.n === (C.equipos || [])[v]; })[0] || {}).total || 0) + '</b>' : '') + '</p>';
+      else if (a.tipo === 'pasos' && v) { var sc = A.puntosPasos(v), pr = (C.procesos || [])[v.p] || { pasos: [] }, OP = ['🤖 Robot', '🙋 Persona', '🗑️ Eliminar']; body = '<div class="kpi"><div><b>' + sc.pts + ' / ' + sc.max + '</b>puntos de la misión</div></div><table><tbody>' + pr.pasos.map(function (st, i) { var ok = v.r[i] === st.a; return '<tr><td>' + (i + 1) + '. ' + esc(st.t) + (i === pr.cuello ? ' <b>(cuello de botella)</b>' : '') + '</td><td>' + (ok ? '<span class="ok">✓</span> ' : '<span class="no">✗</span> ') + OP[st.a] + '</td></tr>'; }).join('') + '</tbody></table>'; }
+      else if (a.tipo === 'mibot' && v) { var hm = A.horasMes(v); body = '<p><b>Tarea:</b> ' + esc(v.t) + '</p><div class="kpi"><div><b>' + num(hm) + ' h/mes</b>que liberarías</div><div><b>' + Math.round(hm * 12) + ' h</b>al año</div>' + (R.horas ? '<div><b>' + num(R.horas, 0) + ' h/mes</b>liberadas por todo el grupo</div>' : '') + '</div><h3>Mi proceso TO-BE</h3><ol>' + (v.s || []).map(function (st) { return '<li>' + (st.r ? '🤖 <b>Robot:</b> ' : '🙋 ') + esc(st.x) + '</li>'; }).join('') + '</ol><div class="box">Siguiente paso: dibuja este mapa en draw.io o Lucidchart y prueba automatizar un paso con Power Automate Desktop (gratis en Windows).</div>'; }
       else if (a.tipo === 'comite' && v) body = '<p>Decisión enviada por tu comité: <b>' + esc(v.n) + '</b>. Acción de 90 días: ' + esc(v.x) + '</p>';
       if (body) { any = true; h += '<h2>' + esc(a.titulo) + '</h2>' + body; }
     });

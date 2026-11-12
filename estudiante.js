@@ -1,6 +1,6 @@
 (function () {
   var A = APP, DB = A.DB, esc = A.esc, $ = function (id) { return document.getElementById(id); };
-  var estado = null, aliasName = A.store('alias:' + A.SALA) || '', borrador = {};
+  var rank = null, estado = null, aliasName = A.store('alias:' + A.SALA) || '', borrador = {};
   $('ctitle').textContent = A.clase.titulo;
   function show(id) { ['s-carga', 's-error', 's-alias', 's-espera', 's-act'].forEach(function (s) { $(s).hidden = s !== id; }); }
   function fail(msg) { $('errtxt').textContent = msg; show('s-error'); }
@@ -32,6 +32,16 @@
     if (DB.presencia) DB.presencia();
     $('brep').hidden = false;
     show('s-espera');
+    if (A.clase.juego) {
+      var pill = document.createElement('span'); pill.className = 'pill'; pill.id = 'ppts'; pill.hidden = true; pill.style.marginTop = '6px'; pill.style.background = 'var(--y2)';
+      $('brep').parentNode.insertBefore(pill, $('brep')); $('brep').insertAdjacentHTML('beforebegin', '<br>');
+      DB.escuchar('resumen/rank', function (r) {
+        rank = r || null;
+        var p = rank && rank.pts ? rank.pts[DB.uid] : null;
+        if (p != null) { pill.hidden = false; pill.textContent = '⭐ ' + p + ' pts · #' + (rank.pos[DB.uid] || '—'); }
+        if (estado && estado.act === '__ranking') { $('s-act').dataset.sig = ''; render(); }
+      });
+    }
     DB.escuchar('estado', function (e) { estado = e; render(); }, function (e) { fail('No hay permiso para leer la clase. Revisa las reglas de Firebase. (' + (e && e.code || '') + ')'); });
   }
 
@@ -54,13 +64,14 @@
   function errBox(el, e) { var d = document.createElement('div'); d.className = 'err'; d.textContent = 'No se pudo enviar. Revisa tu conexión y vuelve a intentar.' + (e && e.code ? ' (' + e.code + ')' : ''); el.appendChild(d); }
 
   function render() {
+    if (estado && estado.act === '__ranking') { show('s-act'); var bx = $('s-act'); bx.dataset.sig = '__r'; bx.dataset.act = '__ranking'; rRanking(bx); return; }
     var a = estado && estado.act ? A.act(estado.act) : null;
     if (!a) { show('s-espera'); return; }
     var box = $('s-act'); show('s-act');
-    var f = { texto: rTexto, quiz: rQuiz, encuesta: rQuiz, escala: rEscala, puntos: rPuntos, multi: rMulti, adkar: rAdkar, comite: rComite, reparto: rReparto, consultoria: rConsultoria }[a.tipo];
+    var f = { texto: rTexto, quiz: rQuiz, encuesta: rQuiz, escala: rEscala, puntos: rPuntos, multi: rMulti, adkar: rAdkar, comite: rComite, reparto: rReparto, consultoria: rConsultoria, equipo: rEquipo, pasos: rPasos, mibot: rMibot }[a.tipo];
     var sig = a.id + '|' + (estado.q || 0) + '|' + (!!estado.revelar) + '|' + gen(A.clave(a, estado.q || 0));
     if (box.dataset.sig === sig) return;
-    var keepScroll = box.dataset.act === a.id && (a.tipo === 'escala' || a.tipo === 'comite' || a.tipo === 'consultoria' || a.tipo === 'reparto');
+    var keepScroll = box.dataset.act === a.id && (a.tipo === 'escala' || a.tipo === 'comite' || a.tipo === 'consultoria' || a.tipo === 'reparto' || a.tipo === 'pasos' || a.tipo === 'mibot');
     box.dataset.sig = sig; box.dataset.act = a.id;
     f(a, box);
     if (!keepScroll) window.scrollTo(0, 0);
@@ -318,6 +329,110 @@
     }
     function ok() { return v.n && v.emp >= 0 && v.r.every(function (x) { return x >= 0; }) && v.p >= 0 && v.k && v.m; }
     function upd() { leer(); $('go').disabled = !ok(); }
+    dibujar();
+  }
+  /* ===================== BotFactory ===================== */
+  function rRanking(box) {
+    var r = rank;
+    if (!r || !r.top) { box.innerHTML = '<div class="eyebrow">Ranking</div><p class="q">El ranking aparecerá aquí en un momento…</p>'; return; }
+    var yo = r.pts && r.pts[DB.uid] != null ? '<div class="note ok center" style="font-size:1.1rem"><b>Tú: ' + r.pts[DB.uid] + ' puntos · puesto #' + r.pos[DB.uid] + '</b></div>' : '';
+    var h = '<div class="eyebrow">BotFactory · Ranking</div><h1>🏆 Los mejores consultores</h1>' + yo + '<div class="bars" style="margin-top:12px">';
+    var mx = r.top.length ? r.top[0].p || 1 : 1;
+    r.top.forEach(function (t, i) { h += '<div class="bar"><span class="lbl">' + (['🥇', '🥈', '🥉'][i] || (i + 1) + '.') + ' ' + esc(t.n) + '</span><span class="trk"><i class="y" style="width:' + (100 * t.p / mx) + '%"></i></span><span class="val">' + t.p + '</span></div>'; });
+    h += '</div>';
+    if (r.equipos && r.equipos.length) {
+      var me = r.equipos.slice().sort(function (x, y) { return y.total - x.total; }), m2 = me[0].total || 1;
+      h += '<h2>Equipos</h2><div class="bars">' + me.map(function (e, i) { return '<div class="bar"><span class="lbl">' + (['🥇', '🥈', '🥉'][i] || '') + ' ' + esc(e.n) + '</span><span class="trk"><i style="width:' + (100 * e.total / m2) + '%"></i></span><span class="val">' + e.total + '</span></div>'; }).join('') + '</div>';
+    }
+    box.innerHTML = h;
+  }
+
+  function rEquipo(a, box) {
+    var key = A.clave(a), prev = local(key), EQ = A.clase.equipos || [];
+    box.innerHTML = head(a) + '<p class="q">' + esc(a.intro) + '</p><div class="opts">' + EQ.map(function (e, i) { return '<button class="opt' + (prev === i ? ' sel' : '') + '" data-i="' + i + '"><span class="k">' + (i + 1) + '</span><span>' + esc(e) + '</span></button>'; }).join('') + '</div>' + (prev != null ? '<div class="note ok">Estás en <b>' + esc(EQ[prev]) + '</b>. Puedes cambiarlo si te equivocaste.</div>' : '');
+    box.querySelectorAll('.opt').forEach(function (b) { b.onclick = function () { var i = +b.dataset.i; enviar(key, i).then(function () { box.dataset.sig = ''; render(); }).catch(function (e) { errBox(box, e); }); }; });
+  }
+
+  function rPasos(a, box) {
+    var key = A.clave(a), prev = local(key), PR = A.clase.procesos || [], EQ = A.clase.equipos || [], rev = !!(estado && estado.revelar);
+    var OPS = [['🤖', 'Robot'], ['🙋', 'Persona'], ['🗑️', 'Eliminar']];
+    if (prev && (rev || !borrador[key])) {
+      var pr = PR[prev.p], sc = A.puntosPasos(prev), h = head(a) + '<p class="q">' + esc(EQ[prev.e] || '') + ' · ' + esc(pr.n) + '</p>';
+      if (rev) {
+        h += '<div class="center" style="margin:6px 0 12px"><div class="big">' + sc.pts + ' / ' + sc.max + ' pts</div><div class="muted">' + sc.ok + ' de ' + sc.total + ' pasos bien clasificados · cuello de botella ' + (sc.cuello ? '✓' : '✗') + '</div></div><ol>';
+        pr.pasos.forEach(function (st, i) { var ok = prev.r[i] === st.a; h += '<li style="margin-bottom:8px">' + esc(st.t) + '<br><b>' + (ok ? '✓ ' : '✗ ') + OPS[st.a][0] + ' ' + OPS[st.a][1] + '</b>' + (i === pr.cuello ? ' · <b>⏳ cuello de botella</b>' : '') + '<br><small class="muted">' + esc(st.exp) + '</small></li>'; });
+        h += '</ol>';
+      } else h += '<div class="note ok">Misión enviada. El profesor revelará los puntajes cuando todos los equipos terminen.</div><div style="margin-top:12px"><button class="btn sec sm" id="edit">Corregir</button></div>';
+      box.innerHTML = h;
+      if ($('edit')) $('edit').onclick = function () { borrador[key] = 1; borrador[key + ':v'] = JSON.parse(JSON.stringify(prev)); box.dataset.sig = ''; render(); };
+      return;
+    }
+    if (rev) { box.innerHTML = head(a) + '<p class="q">La misión ya cerró.</p>'; return; }
+    var v = borrador[key + ':v'] || { e: -1, p: -1, r: [], c: -1 }; borrador[key + ':v'] = v;
+    function dibujar() {
+      var pr = PR[v.p];
+      var h = head(a) + '<p class="muted">' + esc(a.intro) + '</p><label class="f" for="pe">Tu equipo</label><select id="pe" class="input"><option value="-1">Elige el equipo</option>' + EQ.map(function (e, i) { return '<option value="' + i + '">' + esc(e) + '</option>'; }).join('') + '</select>' +
+        '<label class="f" for="pp">Proceso que les asignaron</label><select id="pp" class="input"><option value="-1">Elige el proceso</option>' + PR.map(function (x, i) { return '<option value="' + i + '">' + esc(x.n) + '</option>'; }).join('') + '</select>';
+      if (pr) {
+        h += '<h2>¿Qué hacer con cada paso?</h2><p class="muted" style="font-size:.9rem">🤖 lo hace un robot · 🙋 lo sigue haciendo una persona · 🗑️ se elimina porque no agrega valor</p>' + pr.pasos.map(function (st, i) {
+          return '<div class="item"><p><b>' + (i + 1) + '.</b> ' + esc(st.t) + ' <span class="pill">' + esc(st.d) + '</span></p><div class="seg" style="grid-template-columns:repeat(3,1fr)" data-k="' + i + '">' + OPS.map(function (o, j) { return '<button type="button" data-n="' + j + '" class="' + (v.r[i] === j ? 'sel' : '') + '">' + o[0] + ' ' + o[1] + '</button>'; }).join('') + '</div></div>';
+        }).join('') + '<label class="f" for="pc">⏳ ¿Cuál paso es el cuello de botella?</label><select id="pc" class="input"><option value="-1">Elige el paso</option>' + pr.pasos.map(function (st, i) { return '<option value="' + i + '"' + (v.c === i ? ' selected' : '') + '>Paso ' + (i + 1) + ': ' + esc(st.t.slice(0, 55)) + (st.t.length > 55 ? '…' : '') + '</option>'; }).join('') + '</select>';
+      }
+      h += '<div class="sticky"><button class="btn" id="go" style="width:100%">Enviar misión</button></div>';
+      box.innerHTML = h;
+      $('pe').value = String(v.e); $('pp').value = String(v.p);
+      $('pe').onchange = function () { v.e = +this.value; upd(); };
+      $('pp').onchange = function () { var n = +this.value; if (n !== v.p) { v.p = n; v.r = []; v.c = -1; } dibujar(); };
+      if ($('pc')) $('pc').onchange = function () { v.c = +this.value; upd(); };
+      box.querySelectorAll('.seg').forEach(function (sg) { sg.onclick = function (ev) { var b = ev.target.closest('button'); if (!b) return; v.r[+sg.dataset.k] = +b.dataset.n; sg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('sel', x === b); }); upd(); }; });
+      upd();
+      $('go').onclick = function () { this.disabled = true; enviar(key, v).then(function () { delete borrador[key]; box.dataset.sig = ''; render(); }).catch(function (e) { $('go').disabled = false; errBox(box, e); }); };
+    }
+    function upd() { var pr = PR[v.p]; $('go').disabled = !(v.e >= 0 && pr && pr.pasos.every(function (x, i) { return v.r[i] >= 0; }) && v.c >= 0); }
+    dibujar();
+  }
+
+  function rMibot(a, box) {
+    var key = A.clave(a), prev = local(key);
+    if (prev && !borrador[key]) {
+      var hm = A.horasMes(prev), h = head(a, 'Tu bot') + '<p class="q">' + esc(prev.t) + '</p><div class="center" style="margin:6px 0 14px"><div class="muted">Tiempo que liberarías</div><div class="big">' + hm.toFixed(1).replace('.', ',') + ' h/mes</div><div class="muted">≈ ' + Math.round(hm * 12) + ' horas al año</div></div><h2>Tu proceso TO-BE</h2><ol>';
+      prev.s.forEach(function (st) { h += '<li>' + (st.r ? '🤖 <b>Robot:</b> ' : '🙋 ') + esc(st.x) + '</li>'; });
+      box.innerHTML = h + '</ol><div class="note ok">Enviado. Ya sumaste tus horas al contador del grupo.</div><div style="margin-top:12px"><button class="btn sec sm" id="edit">Corregir</button></div>';
+      $('edit').onclick = function () { borrador[key] = 1; borrador[key + ':v'] = JSON.parse(JSON.stringify(prev)); box.dataset.sig = ''; render(); };
+      return;
+    }
+    var v = borrador[key + ':v'] || { t: '', s: [{ x: '', r: false }, { x: '', r: false }, { x: '', r: false }, { x: '', r: false }], f: '', a: '', b: '' }; borrador[key + ':v'] = v;
+    function dibujar() {
+      var h = head(a) + '<p class="muted">' + esc(a.intro) + '</p><label class="f" for="mt">1. ¿Cuál es la tarea?</label><input id="mt" class="input" maxlength="70" placeholder="Ej.: consolidar el reporte semanal de ventas">' +
+        '<label class="f">2. Escríbela paso a paso y marca con 🤖 los pasos que haría un robot</label>' +
+        v.s.map(function (st, i) { return '<div class="row" style="margin-bottom:8px;flex-wrap:nowrap"><span style="font-weight:800;width:22px">' + (i + 1) + '.</span><input class="input sx" data-i="' + i + '" maxlength="90" style="flex:1;min-width:0" placeholder="Paso ' + (i + 1) + '"><button type="button" class="btn sm ' + (st.r ? '' : 'sec') + ' sr" data-i="' + i + '" style="min-width:64px" aria-pressed="' + st.r + '">' + (st.r ? '🤖' : '🙋') + '</button></div>'; }).join('') +
+        (v.s.length < 10 ? '<button type="button" class="btn sec sm" id="madd">+ Agregar paso</button>' : '') +
+        '<label class="f">3. ¿Cuánto tiempo toma?</label><div class="pts">' +
+        '<div class="pt"><span>Veces por semana</span><input id="mf" class="input" inputmode="decimal" style="width:90px;min-height:40px;text-align:center"></div>' +
+        '<div class="pt"><span>Minutos cada vez, hoy</span><input id="ma" class="input" inputmode="decimal" style="width:90px;min-height:40px;text-align:center"></div>' +
+        '<div class="pt"><span>Minutos cada vez, con el robot</span><input id="mb" class="input" inputmode="decimal" style="width:90px;min-height:40px;text-align:center"></div></div>' +
+        '<div class="note" id="mcalc"></div><div class="sticky"><button class="btn" id="go" style="width:100%">Enviar mi bot</button></div>';
+      box.innerHTML = h;
+      $('mt').value = v.t; $('mf').value = v.f; $('ma').value = v.a; $('mb').value = v.b;
+      box.querySelectorAll('.sx').forEach(function (inp) { inp.value = v.s[+inp.dataset.i].x; inp.oninput = function () { v.s[+inp.dataset.i].x = inp.value; upd(); }; });
+      box.querySelectorAll('.sr').forEach(function (b) { b.onclick = function () { var st = v.s[+b.dataset.i]; st.r = !st.r; b.textContent = st.r ? '🤖' : '🙋'; b.classList.toggle('sec', !st.r); b.setAttribute('aria-pressed', st.r); upd(); }; });
+      if ($('madd')) $('madd').onclick = function () { v.s.push({ x: '', r: false }); dibujar(); };
+      ['mt', 'mf', 'ma', 'mb'].forEach(function (id) { $(id).oninput = upd; });
+      upd();
+      $('go').onclick = function () {
+        var out = { t: v.t.trim().slice(0, 70), s: v.s.filter(function (st) { return st.x.trim(); }).map(function (st) { return { x: st.x.trim().slice(0, 90), r: !!st.r }; }), f: num(v.f), a: num(v.a), b: num(v.b) };
+        this.disabled = true; enviar(key, out).then(function () { delete borrador[key]; box.dataset.sig = ''; render(); }).catch(function (e) { $('go').disabled = false; errBox(box, e); });
+      };
+    }
+    function num(x) { return +String(x).replace(',', '.'); }
+    function upd() {
+      v.t = $('mt').value; v.f = $('mf').value; v.a = $('ma').value; v.b = $('mb').value;
+      var f = num(v.f), aa = num(v.a), bb = num(v.b), llenos = v.s.filter(function (st) { return st.x.trim(); }), robots = llenos.filter(function (st) { return st.r; }).length;
+      var ok = v.t.trim() && llenos.length >= 3 && robots >= 1 && f > 0 && aa > 0 && bb >= 0 && bb < aa;
+      var hm = ok ? A.horasMes({ f: f, a: aa, b: bb }) : 0;
+      $('mcalc').innerHTML = ok ? 'Liberarías <b>' + hm.toFixed(1).replace('.', ',') + ' horas al mes</b> (≈ ' + Math.round(hm * 12) + ' al año).' : 'Necesitas al menos 3 pasos, 1 paso con 🤖 y que el tiempo con el robot sea menor que el de hoy.';
+      $('go').disabled = !ok;
+    }
     dibujar();
   }
 })();
