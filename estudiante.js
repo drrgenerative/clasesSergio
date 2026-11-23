@@ -68,10 +68,10 @@
     var a = estado && estado.act ? A.act(estado.act) : null;
     if (!a) { show('s-espera'); return; }
     var box = $('s-act'); show('s-act');
-    var f = { texto: rTexto, quiz: rQuiz, encuesta: rQuiz, escala: rEscala, puntos: rPuntos, multi: rMulti, adkar: rAdkar, comite: rComite, reparto: rReparto, consultoria: rConsultoria, equipo: rEquipo, pasos: rPasos, mibot: rMibot }[a.tipo];
-    var sig = a.id + '|' + (estado.q || 0) + '|' + (!!estado.revelar) + '|' + gen(A.clave(a, estado.q || 0));
+    var f = { texto: rTexto, quiz: rQuiz, encuesta: rQuiz, escala: rEscala, puntos: rPuntos, multi: rMulti, adkar: rAdkar, comite: rComite, reparto: rReparto, consultoria: rConsultoria, equipo: rEquipo, pasos: rPasos, mibot: rMibot, riesgos: rRiesgos }[a.tipo];
+    var sig = a.id + '|' + (estado.q || 0) + '|' + (!!estado.revelar) + '|' + (!!estado.alerta) + '|' + gen(A.clave(a, estado.q || 0));
     if (box.dataset.sig === sig) return;
-    var keepScroll = box.dataset.act === a.id && (a.tipo === 'escala' || a.tipo === 'comite' || a.tipo === 'consultoria' || a.tipo === 'reparto' || a.tipo === 'pasos' || a.tipo === 'mibot');
+    var keepScroll = box.dataset.act === a.id && (a.tipo === 'escala' || a.tipo === 'comite' || a.tipo === 'consultoria' || a.tipo === 'reparto' || a.tipo === 'pasos' || a.tipo === 'mibot' || a.tipo === 'riesgos');
     box.dataset.sig = sig; box.dataset.act = a.id;
     f(a, box);
     if (!keepScroll) window.scrollTo(0, 0);
@@ -149,7 +149,7 @@
   }
   function resultadoEscala(a, box, v) {
     var p = A.promedios(a, v), g = p.reduce(function (s, x) { return s + x; }, 0) / p.length, low = p.indexOf(Math.min.apply(null, p));
-    var html = head(a, 'Tu resultado') + '<div class="center" style="margin:10px 0 16px"><div class="muted">Madurez digital de tu organización</div><div class="big">' + g.toFixed(1) + ' / 5</div><div class="pill" style="margin-top:6px">' + A.nivel(g) + '</div></div><div class="bars">';
+    var html = head(a, 'Tu resultado') + '<div class="center" style="margin:10px 0 16px"><div class="muted">' + esc(a.etiqueta || 'Madurez digital de tu organización') + '</div><div class="big">' + g.toFixed(1) + ' / 5</div><div class="pill" style="margin-top:6px">' + A.nivel(g) + '</div></div><div class="bars">';
     a.grupos.forEach(function (gr, i) { html += '<div class="bar"><span class="lbl">' + esc(gr.k) + '</span><span class="trk"><i class="' + (i === low ? 'y' : '') + '" style="width:' + (p[i] / 5 * 100) + '%"></i></span><span class="val">' + p[i].toFixed(1) + '</span></div>'; });
     html += '</div><div class="note">Tu dimensión más débil es <b>' + esc(a.grupos[low].k) + '</b>. Tus respuestas ya llegaron al panel del profesor.</div><div style="margin-top:12px"><button class="btn sec sm" id="edit">Corregir respuestas</button></div>';
     box.innerHTML = html;
@@ -336,7 +336,7 @@
     var r = rank;
     if (!r || !r.top) { box.innerHTML = '<div class="eyebrow">Ranking</div><p class="q">El ranking aparecerá aquí en un momento…</p>'; return; }
     var yo = r.pts && r.pts[DB.uid] != null ? '<div class="note ok center" style="font-size:1.1rem"><b>Tú: ' + r.pts[DB.uid] + ' puntos · puesto #' + r.pos[DB.uid] + '</b></div>' : '';
-    var h = '<div class="eyebrow">BotFactory · Ranking</div><h1>🏆 Los mejores consultores</h1>' + yo + '<div class="bars" style="margin-top:12px">';
+    var h = '<div class="eyebrow">' + esc(A.clase.juegoNombre || 'BotFactory') + ' · Ranking</div><h1>' + esc(A.clase.rankingTitulo || '🏆 Los mejores consultores') + '</h1>' + yo + '<div class="bars" style="margin-top:12px">';
     var mx = r.top.length ? r.top[0].p || 1 : 1;
     r.top.forEach(function (t, i) { h += '<div class="bar"><span class="lbl">' + (['🥇', '🥈', '🥉'][i] || (i + 1) + '.') + ' ' + esc(t.n) + '</span><span class="trk"><i class="y" style="width:' + (100 * t.p / mx) + '%"></i></span><span class="val">' + t.p + '</span></div>'; });
     h += '</div>';
@@ -390,6 +390,65 @@
     }
     function upd() { var pr = PR[v.p]; $('go').disabled = !(v.e >= 0 && pr && pr.pasos.every(function (x, i) { return v.r[i] >= 0; }) && v.c >= 0); }
     dibujar();
+  }
+
+  /* ---- Misión de riesgos con Zero Trust (una tabla por equipo) ---- */
+  function rRiesgos(a, box) {
+    var key = A.clave(a), prev = local(key), EQ = A.clase.equipos || [], CT = a.controles || [], IMP = ['Alto', 'Medio', 'Bajo'];
+    var rev = !!(estado && estado.revelar), alerta = !!(estado && estado.alerta);
+    var banner = alerta ? '<div class="note bad" style="margin:10px 0"><b>🚨 ' + esc(a.alerta) + '</b><br>¿Qué control aplican de inmediato y qué harían en las próximas 24 horas?</div>' : '';
+    if (prev && (rev || !borrador[key])) {
+      var sc = A.puntosRiesgos(a, prev), h = head(a) + '<p class="q">' + esc(EQ[prev.e] || '') + '</p>';
+      if (rev) {
+        h += '<div class="center" style="margin:6px 0 12px"><div class="big">' + sc.pts + ' / ' + sc.max + ' pts</div><div class="muted">' + sc.filas + ' de 3 riesgos completos · alerta ' + (sc.alerta ? '✓' : '✗') + ' · ' + sc.bloq + ' de ' + a.fases.length + ' fases del ataque frenadas</div></div><h2>El ataque real a Digitech</h2><ol>';
+        a.fases.forEach(function (f, i) { h += '<li style="margin-bottom:8px">' + esc(f.t) + '<br><b>' + (sc.fases[i] ? '🛡️ Su estrategia lo frenaba' : '✗ Pasó') + '</b><br><small class="muted">Lo frenaban: ' + f.b.map(function (c) { return esc(CT[c]); }).join(' · ') + '</small></li>'; });
+        h += '</ol>';
+      } else {
+        h += banner + '<ul>' + (prev.f || []).filter(function (x) { return x.r; }).map(function (x) { return '<li>' + esc(x.r) + ' <b>(' + esc(IMP[x.i] || '') + ')</b> → ' + esc(CT[x.c] || '') + '</li>'; }).join('') + '</ul>' +
+          (prev.ac >= 0 && prev.ax ? '<p>🚨 Respuesta a la alerta: <b>' + esc(CT[prev.ac]) + '</b>. ' + esc(prev.ax) + '</p>' : '') +
+          '<div class="note ok">Tabla enviada.' + (alerta && !(prev.ac >= 0 && prev.ax) ? ' <b>Falta la respuesta a la alerta: toquen "Corregir" y agréguenla.</b>' : ' Prepárense para presentarla en 2 minutos.') + '</div><div style="margin-top:12px"><button class="btn sec sm" id="edit">Corregir</button></div>';
+      }
+      box.innerHTML = h;
+      if ($('edit')) $('edit').onclick = function () { borrador[key] = 1; borrador[key + ':v'] = JSON.parse(JSON.stringify(prev)); box.dataset.sig = ''; render(); };
+      return;
+    }
+    if (rev) { box.innerHTML = head(a) + '<p class="q">La misión ya cerró.</p>'; return; }
+    var v = borrador[key + ':v'] || { e: -1, act: '', f: [0, 1, 2].map(function () { return { r: '', i: -1, c: -1, m: '' }; }), ac: -1, ax: '' }; borrador[key + ':v'] = v;
+    function opts(sel) { return '<option value="-1">Elige el control…</option>' + CT.map(function (c, j) { return '<option value="' + j + '"' + (sel === j ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
+    var h = head(a) + '<p class="muted">' + esc(a.intro) + '</p>' + banner +
+      '<label class="f" for="re">Tu equipo</label><select id="re" class="input"><option value="-1">Elige el equipo</option>' + EQ.map(function (e, i) { return '<option value="' + i + '">' + esc(e) + '</option>'; }).join('') + '</select>' +
+      '<label class="f" for="ra">¿Qué activo de Digitech protegerían primero?</label><input id="ra" class="input" maxlength="80" placeholder="Ej.: la base de datos de clientes">' +
+      v.f.map(function (x, i) {
+        return '<h2>Riesgo ' + (i + 1) + '</h2><label class="f">Riesgo identificado</label><input class="input fr" data-i="' + i + '" maxlength="80" placeholder="Ej.: proveedores entran con una cuenta compartida">' +
+          '<label class="f">Impacto potencial</label><div class="seg fi" style="grid-template-columns:repeat(3,1fr)" data-i="' + i + '">' + IMP.map(function (t, j) { return '<button type="button" data-n="' + j + '" class="' + (x.i === j ? 'sel' : '') + '">' + t + '</button>'; }).join('') + '</div>' +
+          '<label class="f">Control Zero Trust</label><select class="input fc" data-i="' + i + '">' + opts(x.c) + '</select>' +
+          '<label class="f">¿Cómo lo aplicarían?</label><input class="input fm" data-i="' + i + '" maxlength="120" placeholder="Una frase concreta">';
+      }).join('') +
+      (alerta ? '<h2>🚨 Respuesta a la alerta</h2><label class="f" for="rac">Control que aplican de inmediato</label><select id="rac" class="input">' + opts(v.ac) + '</select><label class="f" for="rax">¿Qué harían en las próximas 24 horas?</label><textarea id="rax" class="input" rows="3" maxlength="140"></textarea>' : '') +
+      '<div class="sticky"><button class="btn" id="go" style="width:100%">Enviar tabla</button></div>';
+    box.innerHTML = h;
+    $('re').value = String(v.e); $('ra').value = v.act;
+    box.querySelectorAll('.fr').forEach(function (el) { el.value = v.f[+el.dataset.i].r; });
+    box.querySelectorAll('.fm').forEach(function (el) { el.value = v.f[+el.dataset.i].m; });
+    if ($('rax')) $('rax').value = v.ax;
+    function upd() {
+      v.e = +$('re').value; v.act = $('ra').value;
+      box.querySelectorAll('.fr').forEach(function (el) { v.f[+el.dataset.i].r = el.value; });
+      box.querySelectorAll('.fm').forEach(function (el) { v.f[+el.dataset.i].m = el.value; });
+      box.querySelectorAll('.fc').forEach(function (el) { v.f[+el.dataset.i].c = +el.value; });
+      if ($('rac')) { v.ac = +$('rac').value; v.ax = $('rax').value; }
+      var una = v.f.some(function (x) { return x.r.trim() && x.i >= 0 && x.c >= 0 && x.m.trim(); });
+      $('go').disabled = !(v.e >= 0 && v.act.trim() && una);
+      $('go').textContent = v.e < 0 ? 'Elige tu equipo' : (!v.act.trim() ? 'Escribe el activo a proteger' : (!una ? 'Completa al menos un riesgo' : 'Enviar tabla'));
+    }
+    box.querySelectorAll('input,select,textarea').forEach(function (el) { el.oninput = upd; el.onchange = upd; });
+    box.querySelectorAll('.fi').forEach(function (sg) { sg.onclick = function (ev) { var b = ev.target.closest('button'); if (!b) return; v.f[+sg.dataset.i].i = +b.dataset.n; sg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('sel', x === b); }); upd(); }; });
+    upd();
+    $('go').onclick = function () {
+      upd();
+      var out = { e: v.e, act: v.act.trim().slice(0, 80), f: v.f.map(function (x) { return { r: x.r.trim().slice(0, 80), i: x.i, c: x.c, m: x.m.trim().slice(0, 120) }; }), ac: v.ac, ax: String(v.ax || '').trim().slice(0, 140) };
+      this.disabled = true; enviar(key, out).then(function () { delete borrador[key]; box.dataset.sig = ''; render(); }).catch(function (e) { $('go').disabled = false; errBox(box, e); });
+    };
   }
 
   function rMibot(a, box) {

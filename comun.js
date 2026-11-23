@@ -96,6 +96,16 @@
       var c = v.c === pr.cuello;
       return { pts: ok * 10 + (c ? 30 : 0), ok: ok, total: pr.pasos.length, max: pr.pasos.length * 10 + 30, cuello: c };
     },
+    /* Misión de riesgos (Zero Trust): filas completas + respuesta a la alerta + fases del ataque que los controles elegidos habrían frenado */
+    puntosRiesgos: function (a, v) {
+      var P = (a && a.pesos) || { fila: 40, alerta: 40, fase: 35 }, F = (a && a.fases) || [];
+      var filas = ((v && v.f) || []).filter(function (x) { return x && String(x.r || '').trim() && x.i >= 0 && x.c >= 0 && String(x.m || '').trim(); });
+      var alerta = !!(v && v.ac >= 0 && String(v.ax || '').trim());
+      var usados = {}; filas.forEach(function (x) { usados[x.c] = 1; }); if (alerta) usados[v.ac] = 1;
+      var fases = F.map(function (f) { return f.b.some(function (c) { return usados[c]; }); });
+      var nf = Math.min(3, filas.length), bloq = fases.filter(Boolean).length;
+      return { pts: nf * P.fila + (alerta ? P.alerta : 0) + bloq * P.fase, max: 3 * P.fila + P.alerta + F.length * P.fase, filas: nf, alerta: alerta, fases: fases, bloq: bloq };
+    },
     /* Mi primer bot: horas liberadas al mes */
     horasMes: function (v) { if (!v) return 0; var d = Math.max(0, (+v.a || 0) - (+v.b || 0)); return d * (+v.f || 0) * 52 / 12 / 60; },
     bloqueo: function (v) { for (var i = 0; i < 5; i++) { if ((+v[i] || 0) <= 3) return i; } return -1; }

@@ -10,7 +10,7 @@
   (function sig(i) {
     if (i >= lista.length) return;
     var s = document.createElement('script');
-    s.src = lista[i] + '?v=4';
+    s.src = lista[i] + '?v=5';
     s.onload = function () { sig(i + 1); };
     s.onerror = function () {
       if (i === 0) { window.INDICE_CLASES = []; return sig(1); }

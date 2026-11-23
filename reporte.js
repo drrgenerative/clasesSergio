@@ -55,6 +55,9 @@
         R[a.id] = { n: v.length, bloqueo: bl, prom: [0, 1, 2, 3, 4].map(function (i) { return +avg(v.map(function (x) { return +x.s[i] || 0; })).toFixed(2); }) };
       } else if (a.tipo === 'reparto' && v.length) {
         R[a.id] = { n: v.length, prom: a.opciones.map(function (o, i) { return +avg(v.map(function (x) { return +(x || [])[i] || 0; })).toFixed(1); }) };
+      } else if (a.tipo === 'riesgos' && v.length) {
+        var best = {}; v.forEach(function (x) { if (x && x.e >= 0) { var p = A.puntosRiesgos(a, x).pts; if (!best[x.e] || p >= best[x.e].p) best[x.e] = { p: p, x: x }; } });
+        R[a.id] = { equipos: Object.keys(best).map(function (k) { return best[k].x; }) };
       } else if ((a.tipo === 'quiz' || a.tipo === 'encuesta') && a.items) {
         var dist = a.items.map(function (it, i) { var vv = vals(resp, a.id + '_' + i); return a.opciones.map(function (o, k) { return vv.filter(function (x) { return x === k; }).length; }); });
         if (dist.some(function (d) { return d.some(Boolean); })) R[a.id] = { dist: dist };
@@ -130,7 +133,7 @@
           v.slice().sort(function (p, q) { return A.horasMes(q) - A.horasMes(p); }).map(function (x) { var st = x.s || []; return '<tr><td>' + esc(x.t) + '</td><td>' + st.filter(function (y) { return y.r; }).length + ' de ' + st.length + '</td><td>' + num(A.horasMes(x)) + '</td></tr>'; }).join('') + '</tbody></table>';
       } else if (a.tipo === 'consultoria' && v.length) {
         body = consultoriaTabla(v);
-      }
+      } else if (a.tipo === 'riesgos' && R[a.id]) body = riesgosTabla(a, R[a.id].equipos) + claveAtaque(a);
       if (body) h += '<h2>' + (++sec) + '. ' + esc(a.titulo) + '</h2>' + body;
     });
     if (C.empresas && C.actividades.some(function (a) { return a.tipo === 'consultoria'; })) h += claveEmpresas();
@@ -143,6 +146,17 @@
       var em = E[x.emp] || { n: '', retos: [] };
       return '<tr><td><b>' + esc(x.n) + '</b></td><td>' + esc(em.n) + '</td><td>' + em.retos.map(function (r, i) { var ok = x.r[i] === r.a; return (i + 1) + '. ' + esc(T[x.r[i]] || '—') + (ok ? ' <span class="ok">✓</span>' : ' <span class="mu">(sugerida: ' + esc(T[r.a]) + ')</span>'); }).join('<br>') + '</td><td><b>Piloto:</b> ' + esc((em.retos[x.p] || {}).t || '') + '<br><b>Riesgo:</b> ' + esc(x.k) + '<br><b>Métrica:</b> ' + esc(x.m) + '</td></tr>';
     }).join('') + '</tbody></table>';
+  }
+  function riesgosTabla(a, lista) {
+    var EQ = C.equipos || [], CT = a.controles || [], IMP = ['Alto', 'Medio', 'Bajo'];
+    return '<table><thead><tr><th>Equipo</th><th>Riesgo</th><th>Impacto</th><th>Control Zero Trust y cómo aplicarlo</th></tr></thead><tbody>' + lista.slice().sort(function (p, q) { return p.e - q.e; }).map(function (x) {
+      var fs = (x.f || []).filter(function (f) { return f.r; });
+      return fs.map(function (f, i) { return '<tr>' + (i === 0 ? '<td rowspan="' + fs.length + '"><b>' + esc(EQ[x.e] || '') + '</b><br><span class="mu">Protegen primero: ' + esc(x.act) + '</span>' + (x.ac >= 0 && x.ax ? '<br><span class="mu">Ante la alerta: ' + esc(CT[x.ac]) + '. ' + esc(x.ax) + '</span>' : '') + '<br><b>' + A.puntosRiesgos(a, x).pts + ' pts</b></td>' : '') + '<td>' + esc(f.r) + '</td><td>' + esc(IMP[f.i] || '') + '</td><td><b>' + esc(CT[f.c] || '') + '</b><br>' + esc(f.m) + '</td></tr>'; }).join('');
+    }).join('') + '</tbody></table>';
+  }
+  function claveAtaque(a) {
+    var CT = a.controles || [];
+    return '<h3>El ataque real a Digitech y los controles que lo frenaban</h3><table><tbody>' + (a.fases || []).map(function (f, i) { return '<tr><td style="width:24px"><b>' + (i + 1) + '</b></td><td>' + esc(f.t) + '</td><td>' + f.b.map(function (c) { return esc(CT[c]); }).join('<br>') + '</td></tr>'; }).join('') + '</tbody></table>';
   }
   function claveEmpresas() {
     var E = C.empresas || [], T = C.tecnologias || [];
@@ -187,6 +201,7 @@
       else if (a.tipo === 'equipo' && v != null) body = '<p>Tu equipo: <b>' + esc((C.equipos || [])[v] || '') + '</b>' + (R.rank && R.rank.equipos ? '. Puntaje final del equipo: <b>' + ((R.rank.equipos.filter(function (e) { return e.n === (C.equipos || [])[v]; })[0] || {}).total || 0) + '</b>' : '') + '</p>';
       else if (a.tipo === 'pasos' && v) { var sc = A.puntosPasos(v), pr = (C.procesos || [])[v.p] || { pasos: [] }, OP = ['🤖 Robot', '🙋 Persona', '🗑️ Eliminar']; body = '<div class="kpi"><div><b>' + sc.pts + ' / ' + sc.max + '</b>puntos de la misión</div></div><table><tbody>' + pr.pasos.map(function (st, i) { var ok = v.r[i] === st.a; return '<tr><td>' + (i + 1) + '. ' + esc(st.t) + (i === pr.cuello ? ' <b>(cuello de botella)</b>' : '') + '</td><td>' + (ok ? '<span class="ok">✓</span> ' : '<span class="no">✗</span> ') + OP[st.a] + '</td></tr>'; }).join('') + '</tbody></table>'; }
       else if (a.tipo === 'mibot' && v) { var hm = A.horasMes(v); body = '<p><b>Tarea:</b> ' + esc(v.t) + '</p><div class="kpi"><div><b>' + num(hm) + ' h/mes</b>que liberarías</div><div><b>' + Math.round(hm * 12) + ' h</b>al año</div>' + (R.horas ? '<div><b>' + num(R.horas, 0) + ' h/mes</b>liberadas por todo el grupo</div>' : '') + '</div><h3>Mi proceso TO-BE</h3><ol>' + (v.s || []).map(function (st) { return '<li>' + (st.r ? '🤖 <b>Robot:</b> ' : '🙋 ') + esc(st.x) + '</li>'; }).join('') + '</ol><div class="box">Siguiente paso: dibuja este mapa en draw.io o Lucidchart y prueba automatizar un paso con Power Automate Desktop (gratis en Windows).</div>'; }
+      else if (a.tipo === 'riesgos') { var eqi = mine.equipo, lst = v ? [v] : (G && G.equipos ? G.equipos.filter(function (x) { return x.e === eqi; }) : []); if (lst.length) body = riesgosTabla(a, lst) + claveAtaque(a); }
       else if (a.tipo === 'comite' && v) body = '<p>Decisión enviada por tu comité: <b>' + esc(v.n) + '</b>. Acción de 90 días: ' + esc(v.x) + '</p>';
       if (body) { any = true; h += '<h2>' + esc(a.titulo) + '</h2>' + body; }
     });
