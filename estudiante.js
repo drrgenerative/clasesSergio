@@ -38,8 +38,8 @@
       DB.escuchar('resumen/rank', function (r) {
         rank = r || null;
         var p = rank && rank.pts ? rank.pts[DB.uid] : null;
-        if (p != null) { pill.hidden = false; pill.textContent = '⭐ ' + p + ' pts · #' + (rank.pos[DB.uid] || '—'); }
-        if (estado && estado.act === '__ranking') { $('s-act').dataset.sig = ''; render(); }
+        if (p != null && !A.clase.soloEquipos) { pill.hidden = false; pill.textContent = '⭐ ' + p + ' pts · #' + (rank.pos[DB.uid] || '—'); }
+        if (estado && (estado.act === '__ranking' || ((A.act(estado.act) || {}).tipo === 'presupuesto' && estado.q > 0))) { $('s-act').dataset.sig = ''; render(); }
       });
     }
     DB.escuchar('estado', function (e) { estado = e; render(); }, function (e) { fail('No hay permiso para leer la clase. Revisa las reglas de Firebase. (' + (e && e.code || '') + ')'); });
@@ -68,10 +68,10 @@
     var a = estado && estado.act ? A.act(estado.act) : null;
     if (!a) { show('s-espera'); return; }
     var box = $('s-act'); show('s-act');
-    var f = { texto: rTexto, quiz: rQuiz, encuesta: rQuiz, escala: rEscala, puntos: rPuntos, multi: rMulti, adkar: rAdkar, comite: rComite, reparto: rReparto, consultoria: rConsultoria, equipo: rEquipo, pasos: rPasos, mibot: rMibot, riesgos: rRiesgos }[a.tipo];
-    var sig = a.id + '|' + (estado.q || 0) + '|' + (!!estado.revelar) + '|' + (!!estado.alerta) + '|' + gen(A.clave(a, estado.q || 0));
+    var f = { texto: rTexto, quiz: rQuiz, encuesta: rQuiz, escala: rEscala, puntos: rPuntos, multi: rMulti, adkar: rAdkar, comite: rComite, reparto: rReparto, consultoria: rConsultoria, equipo: rEquipo, pasos: rPasos, mibot: rMibot, riesgos: rRiesgos, presupuesto: rPresupuesto, rol: rRol, clasifica: rClasifica, canvas: rCanvas, voto: rVoto }[a.tipo];
+    var sig = a.id + '|' + (estado.q || 0) + '|' + (!!estado.revelar) + '|' + (!!estado.alerta) + '|' + (a.tipo === 'presupuesto' && rank ? rank.t : '') + '|' + gen(A.clave(a, estado.q || 0));
     if (box.dataset.sig === sig) return;
-    var keepScroll = box.dataset.act === a.id && (a.tipo === 'escala' || a.tipo === 'comite' || a.tipo === 'consultoria' || a.tipo === 'reparto' || a.tipo === 'pasos' || a.tipo === 'mibot' || a.tipo === 'riesgos');
+    var keepScroll = box.dataset.act === a.id && (a.tipo === 'escala' || a.tipo === 'comite' || a.tipo === 'consultoria' || a.tipo === 'reparto' || a.tipo === 'pasos' || a.tipo === 'mibot' || a.tipo === 'riesgos' || a.tipo === 'presupuesto' || a.tipo === 'clasifica' || a.tipo === 'canvas');
     box.dataset.sig = sig; box.dataset.act = a.id;
     f(a, box);
     if (!keepScroll) window.scrollTo(0, 0);
@@ -335,10 +335,10 @@
   function rRanking(box) {
     var r = rank;
     if (!r || !r.top) { box.innerHTML = '<div class="eyebrow">Ranking</div><p class="q">El ranking aparecerá aquí en un momento…</p>'; return; }
-    var yo = r.pts && r.pts[DB.uid] != null ? '<div class="note ok center" style="font-size:1.1rem"><b>Tú: ' + r.pts[DB.uid] + ' puntos · puesto #' + r.pos[DB.uid] + '</b></div>' : '';
+    var yo = !A.clase.soloEquipos && r.pts && r.pts[DB.uid] != null ? '<div class="note ok center" style="font-size:1.1rem"><b>Tú: ' + r.pts[DB.uid] + ' puntos · puesto #' + r.pos[DB.uid] + '</b></div>' : '';
     var h = '<div class="eyebrow">' + esc(A.clase.juegoNombre || 'BotFactory') + ' · Ranking</div><h1>' + esc(A.clase.rankingTitulo || '🏆 Los mejores consultores') + '</h1>' + yo + '<div class="bars" style="margin-top:12px">';
     var mx = r.top.length ? r.top[0].p || 1 : 1;
-    r.top.forEach(function (t, i) { h += '<div class="bar"><span class="lbl">' + (['🥇', '🥈', '🥉'][i] || (i + 1) + '.') + ' ' + esc(t.n) + '</span><span class="trk"><i class="y" style="width:' + (100 * t.p / mx) + '%"></i></span><span class="val">' + t.p + '</span></div>'; });
+    if (!A.clase.soloEquipos) r.top.forEach(function (t, i) { h += '<div class="bar"><span class="lbl">' + (['🥇', '🥈', '🥉'][i] || (i + 1) + '.') + ' ' + esc(t.n) + '</span><span class="trk"><i class="y" style="width:' + (100 * t.p / mx) + '%"></i></span><span class="val">' + t.p + '</span></div>'; });
     h += '</div>';
     if (r.equipos && r.equipos.length) {
       var me = r.equipos.slice().sort(function (x, y) { return y.total - x.total; }), m2 = me[0].total || 1;
@@ -449,6 +449,153 @@
       var out = { e: v.e, act: v.act.trim().slice(0, 80), f: v.f.map(function (x) { return { r: x.r.trim().slice(0, 80), i: x.i, c: x.c, m: x.m.trim().slice(0, 120) }; }), ac: v.ac, ax: String(v.ax || '').trim().slice(0, 140) };
       this.disabled = true; enviar(key, out).then(function () { delete borrador[key]; box.dataset.sig = ''; render(); }).catch(function (e) { $('go').disabled = false; errBox(box, e); });
     };
+  }
+
+  /* ---- Plan con presupuesto + simulacro de incidentes ---- */
+  function rPresupuesto(a, box) {
+    var key = A.clave(a), prev = local(key), EQ = A.clase.equipos || [], EL = a.elementos, CORTO = a.corto || EL, I = a.incidentes, TOT = a.total || 100, PASO = a.paso || 5;
+    var n = (estado && estado.q) || 0;
+    if (n > 0) {
+      var eqAct = A.clase.actividades.filter(function (x) { return x.tipo === 'equipo'; })[0];
+      var myE = prev ? prev.e : (eqAct ? local(A.clave(eqAct)) : null);
+      var sc = prev ? A.puntosPresupuesto(a, prev, n) : null;
+      var st = sc ? sc.inc.map(function (x) { return x.st; }) : (rank && rank.sim && rank.sim[a.id] && myE != null ? rank.sim[a.id][myE] : null);
+      var ICON = ['💥 No lo contuvieron', '⚠️ Contención parcial', '🛡️ ¡Contenido!'];
+      var h = head(a, 'Simulacro') + '<p class="q">Mes ' + Math.min(12, n * 2) + ' de 12' + (myE != null && EQ[myE] ? ' · ' + esc(EQ[myE]) : '') + '</p>';
+      for (var i = n - 1; i >= 0; i--) {
+        var it = I[i], s0 = st ? st[i] : null;
+        h += '<div class="item" style="' + (i === n - 1 ? 'border-color:var(--red)' : 'opacity:.75') + '"><b>' + esc(it.t) + '</b><br><span class="muted">' + esc(it.d) + '</span>' +
+          (s0 != null ? '<div class="note ' + (s0 === 2 ? 'ok' : 'bad') + '" style="margin-top:8px"><b>' + ICON[s0] + '</b></div>' : '') +
+          '<small class="muted">Lo frenaba invertir en: ' + it.b.map(function (j) { return esc(CORTO[j]); }).join(' + ') + ' (' + (a.umbral || [10, 20])[1] + ' millones o más)</small></div>';
+      }
+      if (sc) h += '<div class="center" style="margin-top:10px"><div class="big">' + sc.pts + ' pts</div><div class="muted">Plan escrito: ' + sc.plan + ' · Incidentes contenidos: ' + sc.cont + ' de ' + n + '</div></div>';
+      else if (st == null) h += '<p class="muted">Mira en la pantalla del profesor cómo le fue a tu equipo.</p>';
+      box.innerHTML = h; return;
+    }
+    if (prev && !borrador[key]) {
+      var h2 = head(a) + '<p class="q">' + esc(EQ[prev.e] || '') + ' · plan enviado</p><div class="pts">' + EL.map(function (o, i) { return '<div class="bar"><span class="lbl">' + esc(CORTO[i]) + '</span><span class="trk"><i style="width:' + (100 * (prev.b[i] || 0) / TOT) + '%"></i></span><span class="val">' + (prev.b[i] || 0) + '</span></div>'; }).join('') + '</div>' +
+        '<div class="note ok">Plan enviado. Cuando empiece el simulacro, la app les mostrará qué incidentes contuvieron.</div><div style="margin-top:12px"><button class="btn sec sm" id="edit">Corregir</button></div>';
+      box.innerHTML = h2;
+      $('edit').onclick = function () { borrador[key] = 1; borrador[key + ':v'] = JSON.parse(JSON.stringify(prev)); box.dataset.sig = ''; render(); };
+      return;
+    }
+    var v = borrador[key + ':v'] || { e: -1, b: EL.map(function () { return 0; }), p: ['', '', ''], c: '', z: -1, zx: '' }; borrador[key + ':v'] = v;
+    var POL = a.politicas || ['Accesos', 'Redes', 'Usuarios'], ZT = a.principios || [];
+    var h3 = head(a) + '<p class="muted">' + esc(a.intro) + '</p>' +
+      '<label class="f" for="pe">Tu equipo</label><select id="pe" class="input"><option value="-1">Elige el equipo</option>' + EQ.map(function (e, i) { return '<option value="' + i + '">' + esc(e) + '</option>'; }).join('') + '</select>' +
+      '<h2>1. Presupuesto: ' + TOT + ' millones</h2><p class="muted" style="margin-top:-4px">Repártanlo entre los 8 elementos del plan, de ' + PASO + ' en ' + PASO + '.</p>' +
+      EL.map(function (o, i) { return '<div class="row" style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="flex:1;min-width:0">' + esc(o) + '</span><button type="button" class="btn sec sm bm" data-i="' + i + '" aria-label="Quitar">−</button><b class="bv" data-i="' + i + '" style="width:42px;text-align:center">' + v.b[i] + '</b><button type="button" class="btn sec sm bp" data-i="' + i + '" aria-label="Agregar">+</button></div>'; }).join('') +
+      '<div class="note" id="pleft" style="margin:8px 0"></div>' +
+      '<h2>2. Políticas mínimas</h2>' + POL.map(function (t, i) { return '<label class="f" for="pp' + i + '">Política para proteger ' + esc(t.toLowerCase()) + '</label><input id="pp' + i + '" class="input pp" data-i="' + i + '" maxlength="120" placeholder="Una regla concreta">'; }).join('') +
+      '<h2>3. Cultura</h2><label class="f" for="pc">Una estrategia para crear una cultura proactiva en ciberseguridad</label><textarea id="pc" class="input" rows="2" maxlength="140"></textarea>' +
+      '<h2>4. Zero Trust</h2><label class="f" for="pz">Principio que aplicarían primero</label><select id="pz" class="input"><option value="-1">Elige el principio</option>' + ZT.map(function (t, i) { return '<option value="' + i + '">' + esc(t) + '</option>'; }).join('') + '</select>' +
+      '<label class="f" for="pzx">¿Dónde y cómo lo aplicarían?</label><input id="pzx" class="input" maxlength="120" placeholder="Ej.: MFA para entrar al sistema central">' +
+      '<div class="sticky"><button class="btn" id="go" style="width:100%">Enviar plan</button></div>';
+    box.innerHTML = h3;
+    $('pe').value = String(v.e); box.querySelectorAll('.pp').forEach(function (el) { el.value = v.p[+el.dataset.i]; }); $('pc').value = v.c; $('pz').value = String(v.z); $('pzx').value = v.zx;
+    function sum() { return v.b.reduce(function (t, x) { return t + x; }, 0); }
+    function upd() {
+      v.e = +$('pe').value; box.querySelectorAll('.pp').forEach(function (el) { v.p[+el.dataset.i] = el.value; }); v.c = $('pc').value; v.z = +$('pz').value; v.zx = $('pzx').value;
+      box.querySelectorAll('.bv').forEach(function (el) { el.textContent = v.b[+el.dataset.i]; });
+      var left = TOT - sum(); $('pleft').innerHTML = left === 0 ? '✓ Presupuesto completo' : 'Les quedan <b>' + left + '</b> millones por asignar';
+      $('pleft').className = 'note' + (left === 0 ? ' ok' : '');
+      var okPol = v.p.every(function (x) { return x.trim(); });
+      $('go').disabled = !(v.e >= 0 && left === 0 && okPol && v.c.trim() && v.z >= 0 && v.zx.trim());
+      $('go').textContent = v.e < 0 ? 'Elige tu equipo' : (left !== 0 ? 'Asignen todo el presupuesto' : (!okPol ? 'Escriban las 3 políticas' : (!v.c.trim() ? 'Escriban la estrategia de cultura' : (v.z < 0 || !v.zx.trim() ? 'Completen Zero Trust' : 'Enviar plan'))));
+    }
+    box.querySelectorAll('.bm,.bp').forEach(function (b) { b.onclick = function () { var i = +b.dataset.i, d = b.classList.contains('bp') ? PASO : -PASO; if (d > 0 && sum() + d > TOT) return; v.b[i] = Math.max(0, v.b[i] + d); upd(); }; });
+    box.querySelectorAll('input,select,textarea').forEach(function (el) { el.oninput = upd; el.onchange = upd; });
+    upd();
+    $('go').onclick = function () {
+      upd(); var out = { e: v.e, b: v.b.slice(), p: v.p.map(function (x) { return x.trim().slice(0, 120); }), c: v.c.trim().slice(0, 140), z: v.z, zx: v.zx.trim().slice(0, 120) };
+      this.disabled = true; enviar(key, out).then(function () { delete borrador[key]; box.dataset.sig = ''; render(); }).catch(function (e) { $('go').disabled = false; errBox(box, e); });
+    };
+  }
+
+  /* ---- Rol dentro del equipo (individual) ---- */
+  function rRol(a, box) {
+    var key = A.clave(a), prev = local(key), R = a.roles || [];
+    box.innerHTML = head(a) + '<p class="q">' + esc(a.intro) + '</p><div class="opts">' + R.map(function (r, i) { return '<button class="opt' + (prev === i ? ' sel' : '') + '" data-i="' + i + '"><span class="k">' + (i + 1) + '</span><span><b>' + esc(r.n) + '</b><br><small class="muted">' + esc(r.d) + '</small></span></button>'; }).join('') + '</div>' +
+      (prev != null && R[prev] ? '<div class="note ok">Tu rol: <b>' + esc(R[prev].n) + '</b>. ' + esc(R[prev].tarea || '') + '</div>' : '');
+    box.querySelectorAll('.opt').forEach(function (b) { b.onclick = function () { enviar(key, +b.dataset.i).then(function () { box.dataset.sig = ''; render(); }).catch(function (e) { errBox(box, e); }); }; });
+  }
+  function miEquipo() { var ea = A.clase.actividades.filter(function (x) { return x.tipo === 'equipo'; })[0]; var v = ea ? local(A.clave(ea)) : null; return v == null ? -1 : v; }
+  function selEquipo(id, val) { var EQ = A.clase.equipos || []; return '<label class="f" for="' + id + '">Tu equipo</label><select id="' + id + '" class="input"><option value="-1">Elige el equipo</option>' + EQ.map(function (e, i) { return '<option value="' + i + '"' + (val === i ? ' selected' : '') + '>' + esc(e) + '</option>'; }).join('') + '</select>'; }
+
+  /* ---- Reto por equipos: clasificar por consenso + escribir preguntas ---- */
+  function rClasifica(a, box) {
+    var key = A.clave(a), prev = local(key), EQ = A.clase.equipos || [], O = a.opciones, rev = !!(estado && estado.revelar);
+    if (prev && (rev || !borrador[key])) {
+      var sc = A.puntosClasifica(a, prev), h = head(a) + '<p class="q">' + esc(EQ[prev.e] || '') + '</p>';
+      if (rev) {
+        h += '<div class="center" style="margin:6px 0 12px"><div class="big">' + sc.pts + ' / ' + sc.max + ' pts</div><div class="muted">' + sc.ok + ' de ' + sc.total + ' escenarios bien clasificados · ' + sc.q + ' preguntas propias</div></div><ol>';
+        a.items.forEach(function (it, i) { var ok = prev.r[i] === it.a; h += '<li style="margin-bottom:8px">' + esc(it.q) + '<br><b>' + (ok ? '✓ ' : '✗ ') + esc(O[it.a]) + '</b>' + (!ok && prev.r[i] >= 0 ? ' <small class="muted">(ustedes: ' + esc(O[prev.r[i]]) + ')</small>' : '') + '<br><small class="muted">' + esc(it.exp) + '</small></li>'; });
+        h += '</ol>';
+      } else h += '<div class="note ok">Respuesta del equipo enviada. El profesor revelará los resultados cuando todos terminen.</div><div style="margin-top:12px"><button class="btn sec sm" id="edit">Corregir</button></div>';
+      box.innerHTML = h;
+      if ($('edit')) $('edit').onclick = function () { borrador[key] = 1; borrador[key + ':v'] = JSON.parse(JSON.stringify(prev)); box.dataset.sig = ''; render(); };
+      return;
+    }
+    if (rev) { box.innerHTML = head(a) + '<p class="q">El reto ya cerró.</p>'; return; }
+    var v = borrador[key + ':v'] || { e: miEquipo(), r: a.items.map(function () { return -1; }), q: (a.preguntas || []).map(function () { return ''; }) }; borrador[key + ':v'] = v;
+    var h2 = head(a) + '<p class="muted">' + esc(a.intro) + '</p>' + selEquipo('ce', v.e) + '<h2>Parte A · Clasifiquen por consenso</h2>' +
+      a.items.map(function (it, i) { return '<div class="item"><p><b>' + (i + 1) + '.</b> ' + esc(it.q) + '</p><div class="seg" style="grid-template-columns:repeat(2,1fr)" data-k="' + i + '">' + O.map(function (o, j) { return '<button type="button" data-n="' + j + '" class="' + (v.r[i] === j ? 'sel' : '') + '">' + esc(o) + '</button>'; }).join('') + '</div></div>'; }).join('') +
+      '<h2>Parte B · Las preguntas de su empresa</h2><p class="muted" style="margin-top:-4px">' + esc(a.introB || '') + '</p>' +
+      (a.preguntas || []).map(function (p, i) { return '<label class="f" for="cq' + i + '">' + esc(p.l) + '</label><input id="cq' + i + '" class="input cq" data-i="' + i + '" maxlength="140" placeholder="' + esc(p.ph) + '">'; }).join('') +
+      '<div class="sticky"><button class="btn" id="go" style="width:100%">Enviar respuesta del equipo</button></div>';
+    box.innerHTML = h2;
+    box.querySelectorAll('.cq').forEach(function (el) { el.value = v.q[+el.dataset.i]; });
+    function upd() {
+      v.e = +$('ce').value; box.querySelectorAll('.cq').forEach(function (el) { v.q[+el.dataset.i] = el.value; });
+      var falt = v.r.filter(function (x) { return x < 0; }).length;
+      $('go').disabled = !(v.e >= 0 && falt === 0);
+      $('go').textContent = v.e < 0 ? 'Elige tu equipo' : (falt ? 'Faltan ' + falt + ' escenarios por clasificar' : 'Enviar respuesta del equipo');
+    }
+    box.querySelectorAll('.seg').forEach(function (sg) { sg.onclick = function (ev) { var b = ev.target.closest('button'); if (!b) return; v.r[+sg.dataset.k] = +b.dataset.n; sg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('sel', x === b); }); upd(); }; });
+    box.querySelectorAll('input,select').forEach(function (el) { el.oninput = upd; el.onchange = upd; });
+    upd();
+    $('go').onclick = function () { upd(); var out = { e: v.e, r: v.r.slice(), q: v.q.map(function (x) { return x.trim().slice(0, 140); }) }; this.disabled = true; enviar(key, out).then(function () { delete borrador[key]; box.dataset.sig = ''; render(); }).catch(function (e) { $('go').disabled = false; errBox(box, e); }); };
+  }
+
+  /* ---- Canvas por equipos ---- */
+  function rCanvas(a, box) {
+    var key = A.clave(a), prev = local(key), EQ = A.clase.equipos || [], F = a.campos, N = a.niveles || [], R = a.roles || [];
+    if (prev && !borrador[key]) {
+      var sc = A.puntosCanvas(a, prev), h = head(a) + '<p class="q">' + esc(EQ[prev.e] || '') + ' · canvas enviado</p>' +
+        F.map(function (f, i) { return '<div class="item"><small class="muted">' + esc(f.l) + '</small><br>' + (prev.f[i] ? esc(prev.f[i]) : '<span class="muted">—</span>') + '</div>'; }).join('') +
+        '<div class="item"><small class="muted">' + esc(a.nivelCorto || 'Tipo de analítica') + '</small><br><b>' + esc(N[prev.n] || '—') + '</b></div>' +
+        '<div class="note ok">Canvas enviado (' + sc.n + ' de ' + sc.total + ' campos). Pueden corregirlo hasta el pitch.</div><div style="margin-top:12px"><button class="btn sec sm" id="edit">Corregir</button></div>';
+      box.innerHTML = h;
+      $('edit').onclick = function () { borrador[key] = 1; borrador[key + ':v'] = JSON.parse(JSON.stringify(prev)); box.dataset.sig = ''; render(); };
+      return;
+    }
+    var v = borrador[key + ':v'] || { e: miEquipo(), f: F.map(function () { return ''; }), n: -1 }; borrador[key + ':v'] = v;
+    var grupo = null, h2 = head(a) + '<p class="muted">' + esc(a.intro) + '</p>' + selEquipo('ve', v.e);
+    F.forEach(function (f, i) {
+      if (f.rol !== grupo) { grupo = f.rol; h2 += '<h2>' + esc(R[f.rol] ? R[f.rol].n : '') + '</h2>'; }
+      h2 += '<label class="f" for="vf' + i + '">' + esc(f.l) + '</label><textarea id="vf' + i + '" class="input vf" data-i="' + i + '" rows="2" maxlength="' + (f.max || 160) + '" placeholder="' + esc(f.ph || '') + '"></textarea>';
+      if (f.nivelDespues) h2 += '<label class="f" for="vn">' + esc(a.nivelLabel || 'Nivel de analítica') + '</label><select id="vn" class="input"><option value="-1">Elige el nivel</option>' + N.map(function (t, j) { return '<option value="' + j + '"' + (v.n === j ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>';
+    });
+    h2 += '<div class="sticky"><button class="btn" id="go" style="width:100%">Enviar canvas del equipo</button></div>';
+    box.innerHTML = h2;
+    box.querySelectorAll('.vf').forEach(function (el) { el.value = v.f[+el.dataset.i]; });
+    function upd() {
+      v.e = +$('ve').value; box.querySelectorAll('.vf').forEach(function (el) { v.f[+el.dataset.i] = el.value; }); if ($('vn')) v.n = +$('vn').value;
+      var n = v.f.filter(function (x) { return x.trim(); }).length;
+      $('go').disabled = !(v.e >= 0 && n >= 1);
+      $('go').textContent = v.e < 0 ? 'Elige tu equipo' : (n === 0 ? 'Escriban al menos un campo' : 'Enviar canvas (' + n + ' de ' + F.length + ' campos)');
+    }
+    box.querySelectorAll('textarea,select').forEach(function (el) { el.oninput = upd; el.onchange = upd; });
+    upd();
+    $('go').onclick = function () { upd(); var out = { e: v.e, f: v.f.map(function (x, i) { return x.trim().slice(0, F[i].max || 160); }), n: v.n }; this.disabled = true; enviar(key, out).then(function () { delete borrador[key]; box.dataset.sig = ''; render(); }).catch(function (e) { $('go').disabled = false; errBox(box, e); }); };
+  }
+
+  /* ---- Voto de pares: no se puede votar por el propio equipo ---- */
+  function rVoto(a, box) {
+    var key = A.clave(a), prev = local(key), EQ = A.clase.equipos || [], mine = miEquipo();
+    box.innerHTML = head(a) + '<p class="q">' + esc(a.pregunta) + '</p>' + (a.ayuda ? '<p class="muted">' + esc(a.ayuda) + '</p>' : '') + '<div class="opts">' + EQ.map(function (e, i) { var own = i === mine; return '<button class="opt' + (prev === i ? ' sel' : '') + '" data-i="' + i + '"' + (own ? ' disabled style="opacity:.45"' : '') + '><span class="k">' + (i + 1) + '</span><span>' + esc(e) + (own ? ' <small>(tu equipo)</small>' : '') + '</span></button>'; }).join('') + '</div>' +
+      (prev != null ? '<div class="note ok">Votaste por <b>' + esc(EQ[prev]) + '</b>. Puedes cambiar tu voto mientras la votación esté abierta.</div>' : '') + (mine < 0 ? '<p class="muted">Si no elegiste equipo al inicio, vota por la propuesta que más te convenció, sin contar la tuya.</p>' : '');
+    box.querySelectorAll('.opt:not([disabled])').forEach(function (b) { b.onclick = function () { enviar(key, +b.dataset.i).then(function () { box.dataset.sig = ''; render(); }).catch(function (e) { errBox(box, e); }); }; });
   }
 
   function rMibot(a, box) {

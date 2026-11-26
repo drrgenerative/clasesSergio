@@ -140,3 +140,5 @@ table.t th{font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:
   .ob{grid-template-columns:1fr 70px;font-size:1rem}
   .ob .trk{grid-column:1/-1;grid-row:2}
 }
+
+.tablewrap{overflow-x:auto;max-width:100%}

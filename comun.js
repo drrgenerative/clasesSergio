@@ -106,6 +106,28 @@
       var nf = Math.min(3, filas.length), bloq = fases.filter(Boolean).length;
       return { pts: nf * P.fila + (alerta ? P.alerta : 0) + bloq * P.fase, max: 3 * P.fila + P.alerta + F.length * P.fase, filas: nf, alerta: alerta, fases: fases, bloq: bloq };
     },
+    /* Plan con presupuesto + simulacro: puntos del plan escrito + incidentes revelados contenidos (n = incidentes revelados) */
+    puntosPresupuesto: function (a, v, n) {
+      var P = (a && a.pesos) || { politica: 20, cultura: 20, zt: 20, contenido: 50, parcial: 20 }, U = (a && a.umbral) || [10, 20];
+      var I = (a && a.incidentes) || [], b = (v && v.b) || [], nn = n == null ? I.length : Math.max(0, Math.min(I.length, n));
+      var pol = ((v && v.p) || []).filter(function (x) { return String(x || '').trim(); }).length;
+      var plan = Math.min(3, pol) * P.politica + (v && String(v.c || '').trim() ? P.cultura : 0) + (v && v.z >= 0 && String(v.zx || '').trim() ? P.zt : 0);
+      var inc = I.map(function (it, i) { var s = it.b.reduce(function (t, j) { return t + (+b[j] || 0); }, 0); return { s: s, st: s >= U[1] ? 2 : (s >= U[0] ? 1 : 0), rev: i < nn }; });
+      var pi = inc.reduce(function (t, x) { return t + (x.rev ? (x.st === 2 ? P.contenido : (x.st === 1 ? P.parcial : 0)) : 0); }, 0);
+      return { plan: plan, inc: inc, pi: pi, pts: plan + pi, max: 3 * P.politica + P.cultura + P.zt + I.length * P.contenido, n: nn, cont: inc.filter(function (x) { return x.rev && x.st === 2; }).length };
+    },
+    /* Reto por equipos: clasificación por consenso + preguntas propias */
+    puntosClasifica: function (a, v) {
+      var P = (a && a.pesos) || { item: 25, pregunta: 25 }, it = (a && a.items) || [], r = (v && v.r) || [];
+      var ok = it.filter(function (x, i) { return r[i] === x.a; }).length, q = ((v && v.q) || []).filter(function (x) { return String(x || '').trim(); }).length;
+      return { ok: ok, total: it.length, q: q, pts: ok * P.item + q * P.pregunta, max: it.length * P.item + ((a && a.preguntas) || []).length * P.pregunta };
+    },
+    /* Canvas por equipos: puntos por completitud */
+    puntosCanvas: function (a, v) {
+      var P = (a && a.pesos) || { campo: 20, nivel: 20 }, F = (a && a.campos) || [];
+      var n = ((v && v.f) || []).filter(function (x) { return String(x || '').trim(); }).length;
+      return { n: n, total: F.length, pts: n * P.campo + (v && v.n >= 0 ? P.nivel : 0), max: F.length * P.campo + P.nivel };
+    },
     /* Mi primer bot: horas liberadas al mes */
     horasMes: function (v) { if (!v) return 0; var d = Math.max(0, (+v.a || 0) - (+v.b || 0)); return d * (+v.f || 0) * 52 / 12 / 60; },
     bloqueo: function (v) { for (var i = 0; i < 5; i++) { if ((+v[i] || 0) <= 3) return i; } return -1; }

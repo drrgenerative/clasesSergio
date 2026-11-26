@@ -55,6 +55,19 @@
         R[a.id] = { n: v.length, bloqueo: bl, prom: [0, 1, 2, 3, 4].map(function (i) { return +avg(v.map(function (x) { return +x.s[i] || 0; })).toFixed(2); }) };
       } else if (a.tipo === 'reparto' && v.length) {
         R[a.id] = { n: v.length, prom: a.opciones.map(function (o, i) { return +avg(v.map(function (x) { return +(x || [])[i] || 0; })).toFixed(1); }) };
+      } else if ((a.tipo === 'clasifica' || a.tipo === 'canvas') && v.length) {
+        var bq = {}; v.forEach(function (x) { if (x && x.e >= 0) { var p = a.tipo === 'clasifica' ? A.puntosClasifica(a, x).pts : A.puntosCanvas(a, x).pts; if (!bq[x.e] || p >= bq[x.e].p) bq[x.e] = { p: p, x: x }; } });
+        R[a.id] = { equipos: Object.keys(bq).map(function (k) { return bq[k].x; }) };
+      } else if (a.tipo === 'voto' && v.length) {
+        var eqo = {}, eqr = (resp || {}).equipo || {}; Object.keys(eqr).forEach(function (u) { if (eqr[u] && eqr[u].v != null) eqo[u] = eqr[u].v; });
+        var cv = (C.equipos || []).map(function () { return 0; }), ov = (resp || {})[a.id] || {};
+        Object.keys(ov).forEach(function (u) { var x = ov[u] && ov[u].v; if (x != null && cv[x] != null && eqo[u] !== x) cv[x]++; });
+        R[a.id] = { votos: cv };
+      } else if (a.tipo === 'rol' && v.length) {
+        var cr = (a.roles || []).map(function () { return 0; }); v.forEach(function (x) { if (cr[x] != null) cr[x]++; }); R[a.id] = { c: cr, n: v.length };
+      } else if (a.tipo === 'presupuesto' && v.length) {
+        var nS = ((resp._sim || {})[a.id] || {}).v || 0, bp = {}; v.forEach(function (x) { if (x && x.e >= 0) { var p = A.puntosPresupuesto(a, x, nS).pts; if (!bp[x.e] || p >= bp[x.e].p) bp[x.e] = { p: p, x: x }; } });
+        R[a.id] = { n: nS, equipos: Object.keys(bp).map(function (k) { return bp[k].x; }) };
       } else if (a.tipo === 'riesgos' && v.length) {
         var best = {}; v.forEach(function (x) { if (x && x.e >= 0) { var p = A.puntosRiesgos(a, x).pts; if (!best[x.e] || p >= best[x.e].p) best[x.e] = { p: p, x: x }; } });
         R[a.id] = { equipos: Object.keys(best).map(function (k) { return best[k].x; }) };
@@ -134,6 +147,11 @@
       } else if (a.tipo === 'consultoria' && v.length) {
         body = consultoriaTabla(v);
       } else if (a.tipo === 'riesgos' && R[a.id]) body = riesgosTabla(a, R[a.id].equipos) + claveAtaque(a);
+      else if (a.tipo === 'presupuesto' && R[a.id]) body = planTabla(a, R[a.id].equipos, R[a.id].n) + claveIncidentes(a);
+      else if (a.tipo === 'clasifica' && R[a.id]) body = clasificaTabla(a, R[a.id].equipos) + claveClasifica(a);
+      else if (a.tipo === 'canvas' && R[a.id]) body = canvasTabla(a, R[a.id].equipos);
+      else if (a.tipo === 'voto' && R[a.id]) { var mv = Math.max.apply(null, R[a.id].votos.concat([1])); body = R[a.id].votos.map(function (n, i) { return n ? bar(C.equipos[i], n, mv, 'y', n + (n === 1 ? ' voto' : ' votos')) : ''; }).join(''); }
+      else if (a.tipo === 'rol' && R[a.id]) body = (a.roles || []).map(function (r, i) { return bar(r.n, R[a.id].c[i], R[a.id].n, '', R[a.id].c[i]); }).join('');
       if (body) h += '<h2>' + (++sec) + '. ' + esc(a.titulo) + '</h2>' + body;
     });
     if (C.empresas && C.actividades.some(function (a) { return a.tipo === 'consultoria'; })) h += claveEmpresas();
@@ -153,6 +171,30 @@
       var fs = (x.f || []).filter(function (f) { return f.r; });
       return fs.map(function (f, i) { return '<tr>' + (i === 0 ? '<td rowspan="' + fs.length + '"><b>' + esc(EQ[x.e] || '') + '</b><br><span class="mu">Protegen primero: ' + esc(x.act) + '</span>' + (x.ac >= 0 && x.ax ? '<br><span class="mu">Ante la alerta: ' + esc(CT[x.ac]) + '. ' + esc(x.ax) + '</span>' : '') + '<br><b>' + A.puntosRiesgos(a, x).pts + ' pts</b></td>' : '') + '<td>' + esc(f.r) + '</td><td>' + esc(IMP[f.i] || '') + '</td><td><b>' + esc(CT[f.c] || '') + '</b><br>' + esc(f.m) + '</td></tr>'; }).join('');
     }).join('') + '</tbody></table>';
+  }
+  function planTabla(a, lista, nS) {
+    var EQ = C.equipos || [], CO = a.corto || a.elementos, ZT = a.principios || [], POL = a.politicas || ['Accesos', 'Redes', 'Usuarios'], ICO = ['✗', '◐', '✓'];
+    return lista.slice().sort(function (p, q) { return p.e - q.e; }).map(function (x) {
+      var sc = A.puntosPresupuesto(a, x, nS);
+      return '<h3>' + esc(EQ[x.e] || '') + ' · ' + sc.pts + ' pts</h3><table><thead><tr><th>Elemento del plan</th><th>Millones</th></tr></thead><tbody>' + CO.map(function (c, j) { return '<tr><td>' + esc(a.elementos[j]) + '</td><td>' + (x.b[j] || 0) + '</td></tr>'; }).join('') + '</tbody></table>' +
+        '<ul>' + POL.map(function (t, i) { return '<li><b>Política de ' + esc(t.toLowerCase()) + ':</b> ' + esc((x.p || [])[i] || '—') + '</li>'; }).join('') + '<li><b>Cultura:</b> ' + esc(x.c || '—') + '</li><li><b>Zero Trust:</b> ' + esc(ZT[x.z] || '—') + '. ' + esc(x.zx || '') + '</li></ul>' +
+        (nS ? '<p>Simulacro: ' + sc.inc.slice(0, nS).map(function (r, i) { return 'I' + (i + 1) + ' ' + ICO[r.st]; }).join(' · ') + ' <span class="mu">(✓ contenido, ◐ parcial, ✗ no contenido)</span></p>' : '');
+    }).join('');
+  }
+  function claveIncidentes(a) {
+    var CO = a.corto || a.elementos;
+    return '<h3>Los incidentes del simulacro y lo que los frenaba</h3><table><tbody>' + a.incidentes.map(function (it, i) { return '<tr><td style="width:28px"><b>I' + (i + 1) + '</b></td><td><b>' + esc(it.t) + '</b><br>' + esc(it.d) + '</td><td>' + it.b.map(function (j) { return esc(CO[j]); }).join(' + ') + '<br><span class="mu">' + esc(it.leccion || '') + '</span></td></tr>'; }).join('') + '</tbody></table>';
+  }
+  function clasificaTabla(a, lista) {
+    var EQ = C.equipos || [];
+    return '<table><thead><tr><th>Equipo</th><th>Aciertos</th>' + (a.preguntas || []).map(function (p) { return '<th>' + esc(p.c) + '</th>'; }).join('') + '</tr></thead><tbody>' + lista.slice().sort(function (p, q) { return p.e - q.e; }).map(function (x) { var sc = A.puntosClasifica(a, x); return '<tr><td><b>' + esc(EQ[x.e] || '') + '</b><br><span class="mu">' + sc.pts + ' pts</span></td><td>' + sc.ok + ' / ' + sc.total + '</td>' + (a.preguntas || []).map(function (p, i) { return '<td>' + esc((x.q || [])[i] || '—') + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>';
+  }
+  function claveClasifica(a) {
+    return '<h3>Clave de los escenarios</h3><table><tbody>' + a.items.map(function (it, i) { return '<tr><td style="width:24px"><b>' + (i + 1) + '</b></td><td>' + esc(it.q) + '<br><span class="mu">' + esc(it.exp) + '</span></td><td><b>' + esc(a.opciones[it.a]) + '</b></td></tr>'; }).join('') + '</tbody></table>';
+  }
+  function canvasTabla(a, lista) {
+    var EQ = C.equipos || [], N = a.niveles || [];
+    return lista.slice().sort(function (p, q) { return p.e - q.e; }).map(function (x) { return '<h3>' + esc(EQ[x.e] || '') + '</h3><table><tbody>' + a.campos.map(function (f, i) { return '<tr><td style="width:34%"><b>' + esc(f.c || f.l) + '</b></td><td>' + esc((x.f || [])[i] || '—') + '</td></tr>'; }).join('') + '<tr><td><b>' + esc(a.nivelCorto || 'Tipo de analítica') + '</b></td><td>' + esc(N[x.n] || '—') + '</td></tr></tbody></table>'; }).join('');
   }
   function claveAtaque(a) {
     var CT = a.controles || [];
@@ -201,6 +243,9 @@
       else if (a.tipo === 'equipo' && v != null) body = '<p>Tu equipo: <b>' + esc((C.equipos || [])[v] || '') + '</b>' + (R.rank && R.rank.equipos ? '. Puntaje final del equipo: <b>' + ((R.rank.equipos.filter(function (e) { return e.n === (C.equipos || [])[v]; })[0] || {}).total || 0) + '</b>' : '') + '</p>';
       else if (a.tipo === 'pasos' && v) { var sc = A.puntosPasos(v), pr = (C.procesos || [])[v.p] || { pasos: [] }, OP = ['🤖 Robot', '🙋 Persona', '🗑️ Eliminar']; body = '<div class="kpi"><div><b>' + sc.pts + ' / ' + sc.max + '</b>puntos de la misión</div></div><table><tbody>' + pr.pasos.map(function (st, i) { var ok = v.r[i] === st.a; return '<tr><td>' + (i + 1) + '. ' + esc(st.t) + (i === pr.cuello ? ' <b>(cuello de botella)</b>' : '') + '</td><td>' + (ok ? '<span class="ok">✓</span> ' : '<span class="no">✗</span> ') + OP[st.a] + '</td></tr>'; }).join('') + '</tbody></table>'; }
       else if (a.tipo === 'mibot' && v) { var hm = A.horasMes(v); body = '<p><b>Tarea:</b> ' + esc(v.t) + '</p><div class="kpi"><div><b>' + num(hm) + ' h/mes</b>que liberarías</div><div><b>' + Math.round(hm * 12) + ' h</b>al año</div>' + (R.horas ? '<div><b>' + num(R.horas, 0) + ' h/mes</b>liberadas por todo el grupo</div>' : '') + '</div><h3>Mi proceso TO-BE</h3><ol>' + (v.s || []).map(function (st) { return '<li>' + (st.r ? '🤖 <b>Robot:</b> ' : '🙋 ') + esc(st.x) + '</li>'; }).join('') + '</ol><div class="box">Siguiente paso: dibuja este mapa en draw.io o Lucidchart y prueba automatizar un paso con Power Automate Desktop (gratis en Windows).</div>'; }
+      else if (a.tipo === 'clasifica' || a.tipo === 'canvas') { var eqc = mine.equipo, lc = v ? [v] : (G && G.equipos ? G.equipos.filter(function (x) { return x.e === eqc; }) : []); if (lc.length) body = a.tipo === 'clasifica' ? clasificaTabla(a, lc) + claveClasifica(a) : canvasTabla(a, lc); }
+      else if (a.tipo === 'rol' && v != null && a.roles[v]) body = '<div class="box">Tu rol en el equipo: <b>' + esc(a.roles[v].n) + '</b>. ' + esc(a.roles[v].tarea || a.roles[v].d) + '</div>';
+      else if (a.tipo === 'presupuesto') { var eqp = mine.equipo, lp = v ? [v] : (G && G.equipos ? G.equipos.filter(function (x) { return x.e === eqp; }) : []); if (lp.length) body = planTabla(a, lp, G ? G.n : 0) + claveIncidentes(a); }
       else if (a.tipo === 'riesgos') { var eqi = mine.equipo, lst = v ? [v] : (G && G.equipos ? G.equipos.filter(function (x) { return x.e === eqi; }) : []); if (lst.length) body = riesgosTabla(a, lst) + claveAtaque(a); }
       else if (a.tipo === 'comite' && v) body = '<p>Decisión enviada por tu comité: <b>' + esc(v.n) + '</b>. Acción de 90 días: ' + esc(v.x) + '</p>';
       if (body) { any = true; h += '<h2>' + esc(a.titulo) + '</h2>' + body; }
